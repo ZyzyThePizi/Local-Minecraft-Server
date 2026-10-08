@@ -145,6 +145,10 @@ export default function App() {
             <Button onClick={() => connect()} icon={<RefreshCw className="size-4" />}>
               Újrapróbálás
             </Button>
+            <p className="mx-auto mt-6 max-w-md text-xs text-muted/80">
+              Tailscale-t futtató gépen a böngésző engedélyt kér a „helyi hálózati eszközök” eléréséhez. Ezt engedélyezd, különben az oldal
+              nem éri el a szervergépet.
+            </p>
           </Card>
         )}
 

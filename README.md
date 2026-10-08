@@ -55,6 +55,10 @@ modlistából építi fel, és kihagyja a csak kliens oldali modokat. Utána tel
 6. **Játékcím:** indítsd el a playit.gg-t, és hozz létre egy *Minecraft Java* tunnelt a `127.0.0.1:25565`-re. A kapott címet
    írd be a panelen: *Beállítások → Csatlakozási cím*.
 
+> **Saját gépeken (tailneten belül):** a MagicDNS a `*.ts.net` címet a belső `100.x` IP-re oldja fel, ezért az Edge/Chrome
+> egyszer engedélyt kér a „helyi hálózati eszközök” eléréséhez. Ezt engedélyezd. Kívülről (barátok) a publikus Funnel címen megy,
+> nincs kérdés.
+
 ### Automatikus indítás Windows bejelentkezéskor
 
 `Win+R` → `shell:startup` → ide tegyél egy parancsikont a `start-backend.bat`-ra. A panelen a *Beállítások → Automatikus indítás*
