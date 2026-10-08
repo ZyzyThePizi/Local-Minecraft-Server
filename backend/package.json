@@ -1,0 +1,25 @@
+{
+  "name": "minecraft-panel-backend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node src/index.ts",
+    "dev": "node --watch src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.4",
+    "hono": "^4.13.13",
+    "tar": "^7.5.22",
+    "yauzl": "^3.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "@types/yauzl": "^3.4.0",
+    "typescript": "^7.0.2"
+  }
+}

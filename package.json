@@ -1,0 +1,19 @@
+{
+  "name": "minecraft-panel",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "backend",
+    "web"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "npm run start -w backend",
+    "dev:backend": "npm run dev -w backend",
+    "dev:web": "npm run dev -w web",
+    "build": "npm run build -w web",
+    "typecheck": "npm run typecheck -w backend && npm run typecheck -w web"
+  }
+}
