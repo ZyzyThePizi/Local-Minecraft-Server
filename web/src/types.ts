@@ -88,3 +88,11 @@ export interface Job {
   startedAt: number;
   finishedAt?: number;
 }
+
+export interface KnownPlayer {
+  name: string;
+  uuid: string;
+  op: boolean;
+  online: boolean;
+  dataFiles: number;
+}

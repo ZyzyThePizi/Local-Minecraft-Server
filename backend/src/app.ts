@@ -6,6 +6,7 @@ import { checkPassword, issueToken, loginRetryAfter, recordLoginFailure, recordL
 import { config, HttpError, reloadEnv } from './config.ts';
 import { recommendedMemory, startInstall, totalMemoryMb, type InstallRequest } from './install.ts';
 import { getJob, latestJob, runningJob } from './jobs.ts';
+import { isUuid, listPlayers, resetPlayer } from './players.ts';
 import { readProperties, writeProperties } from './properties.ts';
 import * as curseforge from './providers/curseforge.ts';
 import * as modrinth from './providers/modrinth.ts';
@@ -185,6 +186,24 @@ app.post('/api/admin/server/command', async (c) => {
 });
 
 app.get('/api/admin/server/logs', (c) => c.json(server.logsSince(Number(c.req.query('since') ?? 0) || 0)));
+
+app.get('/api/admin/players', async (c) => {
+  const { inst } = await activeInstance();
+  return c.json({ players: inst ? await listPlayers(inst.id, [...server.players]) : [] });
+});
+
+app.post('/api/admin/players/:uuid/reset', async (c) => {
+  const inst = await requireActiveInstance();
+  const uuid = c.req.param('uuid') ?? '';
+  if (!isUuid(uuid)) throw bad('Érvénytelen játékos azonosító.');
+  // Mods (FTB Quests, Teams…) keep player data in memory and would write it back on the next save.
+  if (server.isActive() && server.instanceId === inst.id) {
+    throw new HttpError(409, 'SERVER_RUNNING', 'A játékos visszaállításához előbb állítsd le a szervert.');
+  }
+  const deleted = await resetPlayer(inst.id, uuid);
+  server.panel(`Játékos visszaállítva (${uuid}): ${deleted.length} fájl törölve.`);
+  return c.json({ deleted });
+});
 
 app.get('/api/admin/properties', async (c) => {
   const inst = await requireActiveInstance();
