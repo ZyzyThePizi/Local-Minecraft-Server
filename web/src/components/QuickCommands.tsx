@@ -107,7 +107,7 @@ export function QuickCommands({ canSend, target, onTarget, players }: { canSend:
       <div className="space-y-5">
         <div>
           <label className="label mb-2 block" htmlFor="qc-player">
-            Játékos
+            Kiválasztott játékos
           </label>
           <input
             id="qc-player"
