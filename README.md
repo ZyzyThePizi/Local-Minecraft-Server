@@ -78,7 +78,8 @@ CurseForge „Client” jelölése néha téves, és egy hiányzó függőség i
    ```
    Új gépet build nélkül is ki lehet próbálni: az oldal alján a **Backend cím** gombbal.
 6. **Játékcím:** indítsd el a playit.gg-t, és hozz létre egy *Minecraft Java* tunnelt a `127.0.0.1:25565`-re. A kapott címet
-   írd be a panelen: *Beállítások → Csatlakozási cím*.
+   írd be a panelen: *Beállítások → Csatlakozási cím*. A `start-backend.bat` a playit-et is elindítja (külön, kis
+   méretű ablakban), ha telepítve van és még nem fut.
 
 > **Saját gépeken (tailneten belül):** a MagicDNS a `*.ts.net` címet a belső `100.x` IP-re oldja fel, ezért az Edge/Chrome
 > egyszer engedélyt kér a „helyi hálózati eszközök” eléréséhez. Ezt engedélyezd. Kívülről (barátok) a publikus Funnel címen megy,
