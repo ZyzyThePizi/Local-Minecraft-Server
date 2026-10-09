@@ -18,6 +18,21 @@ export function ControlTab({
   goToPacks: () => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
+  const [opBusy, setOpBusy] = useState<string | null>(null);
+
+  // Some modpacks wait for an operator to set up the world, so OP is one click away.
+  const toggleOp = async (player: string, isOp: boolean) => {
+    setOpBusy(player);
+    setError(null);
+    try {
+      await post('/api/admin/server/command', { command: `${isOp ? 'deop' : 'op'} ${player}` });
+      setTimeout(refresh, 800);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Ismeretlen hiba.');
+    } finally {
+      setOpBusy(null);
+    }
+  };
   const [error, setError] = useState<string | null>(null);
   const { server, instance } = overview;
   const state = server.state;
@@ -117,12 +132,26 @@ export function ControlTab({
           </PanelTitle>
           {state === 'running' && server.players.length ? (
             <ul className="space-y-2">
-              {server.players.map((p) => (
-                <li key={p} className="flex items-center gap-3 border border-line bg-bg/50 px-2 py-1.5">
-                  <img src={`https://mc-heads.net/avatar/${encodeURIComponent(p)}/28`} alt="" className="pixel size-7" />
-                  <span className="readout text-sm">{p}</span>
-                </li>
-              ))}
+              {server.players.map((p) => {
+                const isOp = (server.ops ?? []).some((o) => o.toLowerCase() === p.toLowerCase());
+                return (
+                  <li key={p} className="flex items-center gap-3 border border-line bg-bg/50 py-1.5 pr-1.5 pl-2">
+                    <img src={`https://mc-heads.net/avatar/${encodeURIComponent(p)}/28`} alt="" className="pixel size-7" />
+                    <span className="readout min-w-0 flex-1 truncate text-sm">{p}</span>
+                    <button
+                      onClick={() => toggleOp(p, isOp)}
+                      disabled={opBusy === p}
+                      title={isOp ? 'Operátori jog elvétele (deop)' : 'Operátori jog adása (op)'}
+                      aria-pressed={isOp}
+                      className={`h-7 border px-2 font-mono text-[11px] tracking-[0.06em] uppercase transition-colors disabled:opacity-40 ${
+                        isOp ? 'border-signal/40 bg-signal-dim text-signal' : 'border-line-strong text-fg-faint hover:text-fg'
+                      }`}
+                    >
+                      {isOp ? 'OP ✓' : 'OP'}
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           ) : (
             <p className="text-sm text-fg-faint">{state === 'running' ? 'Most senki sincs fent.' : 'A szerver nem fut.'}</p>

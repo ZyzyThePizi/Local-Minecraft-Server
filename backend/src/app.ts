@@ -17,6 +17,7 @@ import {
   getSettings,
   isValidInstanceId,
   listInstances,
+  readJson,
   saveInstance,
   serverDir,
   updateSettings,
@@ -132,10 +133,12 @@ app.use('/api/admin/*', async (c, next) => {
 
 app.get('/api/admin/overview', async (c) => {
   const { settings, inst } = await activeInstance();
+  const ops = inst ? await readJson<{ name: string }[]>(join(serverDir(inst.id), 'ops.json'), []) : [];
   return c.json({
     server: {
       state: server.state,
       players: [...server.players],
+      ops: ops.map((o) => o.name),
       startedAt: server.startedAt,
       instanceId: server.instanceId,
     },

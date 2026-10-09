@@ -43,7 +43,7 @@ export interface Settings {
 }
 
 export interface Overview {
-  server: { state: ServerState; players: string[]; startedAt: number | null; instanceId: string | null };
+  server: { state: ServerState; players: string[]; ops?: string[]; startedAt: number | null; instanceId: string | null };
   instance: InstanceSummary | null;
   settings: Settings;
   system: { totalMemoryMb: number; recommendedMemoryMb: number; platform: string };
