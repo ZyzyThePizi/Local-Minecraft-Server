@@ -72,7 +72,52 @@ const fileUrl = (f: CfFile) =>
 const sha1Of = (f: CfFile) => f.hashes?.find((h) => h.algo === 1)?.value;
 const RELEASE_TYPES = { 1: 'release', 2: 'beta', 3: 'alpha' } as const;
 
-export async function search(query: string, page = 0): Promise<PackSummary[]> {
+const toSummary = (m: CfMod): PackSummary => ({
+  source: 'curseforge',
+  id: String(m.id),
+  slug: m.slug,
+  name: m.name,
+  summary: m.summary,
+  iconUrl: m.logo?.thumbnailUrl,
+  downloads: m.downloadCount,
+  author: m.authors?.[0]?.name,
+  websiteUrl: m.links?.websiteUrl,
+  mcVersions: sortMcVersions((m.latestFilesIndexes ?? []).map((i) => i.gameVersion)),
+  loaders: [...new Set((m.latestFilesIndexes ?? []).map((i) => LOADER_NAMES[i.modLoader ?? 0]).filter(Boolean) as string[])],
+});
+
+/**
+ * Some CurseForge keys are valid for every endpoint except /mods/search (403). For those, the search
+ * itself goes through the public api.curse.tools mirror; everything that is installed (mod details,
+ * file list, downloads) still comes from the official API with the user's own key.
+ */
+const SEARCH_MIRROR = 'https://api.curse.tools/v1/cf';
+const SEARCH_BLOCK_MS = 30 * 60 * 1000;
+let officialSearchBlockedUntil = 0;
+
+export type SearchVia = 'official' | 'mirror' | 'direct';
+
+/** A pasted project ID or curseforge.com modpack link resolves straight to that pack. */
+async function resolveDirect(query: string) {
+  const q = query.trim();
+  let id: number | null = /^\d{3,9}$/.test(q) ? Number(q) : null;
+  const slug = /curseforge\.com\/minecraft\/modpacks\/([a-z0-9][a-z0-9-]*)/i.exec(q)?.[1];
+  if (!id && slug) {
+    // cfwidget maps slugs to project IDs (the official slug lookup is the blocked search endpoint).
+    const widget = await fetchJson<{ id?: number }>(`https://api.cfwidget.com/minecraft/modpacks/${slug.toLowerCase()}`).catch(() => null);
+    id = widget?.id ?? null;
+    if (!id) throw new HttpError(404, 'NOT_FOUND', `Nem található ilyen CurseForge modpack: ${slug}`);
+  }
+  if (!id) return null;
+  const mod = await cf<CfMod>(`/v1/mods/${id}`);
+  if (mod.classId !== CLASS.modpacks) throw new HttpError(400, 'NOT_MODPACK', `${mod.name} nem modpack, hanem egy mod vagy más tartalom.`);
+  return toSummary(mod);
+}
+
+export async function search(query: string, page = 0): Promise<{ results: PackSummary[]; via: SearchVia }> {
+  const direct = await resolveDirect(query);
+  if (direct) return { results: [direct], via: 'direct' };
+
   const params = new URLSearchParams({
     gameId: String(GAME_MINECRAFT),
     classId: String(CLASS.modpacks),
@@ -82,20 +127,20 @@ export async function search(query: string, page = 0): Promise<PackSummary[]> {
     pageSize: '20',
     index: String(page * 20),
   });
-  const mods = await cf<CfMod[]>(`/v1/mods/search?${params}`);
-  return mods.map((m) => ({
-    source: 'curseforge',
-    id: String(m.id),
-    slug: m.slug,
-    name: m.name,
-    summary: m.summary,
-    iconUrl: m.logo?.thumbnailUrl,
-    downloads: m.downloadCount,
-    author: m.authors?.[0]?.name,
-    websiteUrl: m.links?.websiteUrl,
-    mcVersions: sortMcVersions((m.latestFilesIndexes ?? []).map((i) => i.gameVersion)),
-    loaders: [...new Set((m.latestFilesIndexes ?? []).map((i) => LOADER_NAMES[i.modLoader ?? 0]).filter(Boolean) as string[])],
-  }));
+
+  if (Date.now() > officialSearchBlockedUntil) {
+    try {
+      return { results: (await cf<CfMod[]>(`/v1/mods/search?${params}`)).map(toSummary), via: 'official' };
+    } catch (err) {
+      if (!(err instanceof HttpError && err.code === 'CURSEFORGE_KEY_INVALID')) throw err;
+      // Search refused: only fall back if the key itself works (this throws when it does not).
+      await cf(`/v1/games/${GAME_MINECRAFT}`);
+      officialSearchBlockedUntil = Date.now() + SEARCH_BLOCK_MS;
+      console.log('  A CurseForge kulcs a keresésre nem kap jogot, a keresés a nyilvános tükrön megy (a letöltés a saját kulccsal).');
+    }
+  }
+  const res = await fetchJson<{ data: CfMod[] }>(`${SEARCH_MIRROR}/mods/search?${params}`);
+  return { results: res.data.filter((m) => m.classId === CLASS.modpacks).map(toSummary), via: 'mirror' };
 }
 
 export async function versions(projectId: string): Promise<PackVersion[]> {

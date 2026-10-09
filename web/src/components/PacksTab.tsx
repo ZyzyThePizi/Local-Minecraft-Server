@@ -22,6 +22,7 @@ export function PacksTab({
   const [query, setQuery] = useState('');
   const q = useDebounced(query, 400);
   const [results, setResults] = useState<PackSummary[] | null>(null);
+  const [via, setVia] = useState<'official' | 'mirror' | 'direct'>('official');
   const [error, setError] = useState<ApiError | null>(null);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<PackSummary | null>(null);
@@ -39,8 +40,12 @@ export function PacksTab({
     let alive = true;
     setLoading(true);
     setError(null);
-    get<{ results: PackSummary[] }>(`/api/admin/packs/search?source=${source}&q=${encodeURIComponent(q)}`)
-      .then((r) => alive && setResults(r.results))
+    get<{ results: PackSummary[]; via: 'official' | 'mirror' | 'direct' }>(`/api/admin/packs/search?source=${source}&q=${encodeURIComponent(q)}`)
+      .then((r) => {
+        if (!alive) return;
+        setResults(r.results);
+        setVia(r.via);
+      })
       .catch((err: ApiError) => {
         if (!alive) return;
         setError(err);
@@ -88,7 +93,7 @@ export function PacksTab({
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder={`Keresés a ${SOURCE_LABEL[source]} modpackek között…`}
+              placeholder={source === 'curseforge' ? 'Keresés név alapján, vagy illeszd be a CurseForge linket / projekt ID-t…' : 'Keresés a Modrinth modpackek között…'}
               className={`${inputClass} pl-9`}
               aria-label="Modpack keresése"
             />
@@ -104,7 +109,16 @@ export function PacksTab({
         <Notice tone="danger">{error.message}</Notice>
       ) : (
         <>
-          <p className="label">{q ? `Találatok: „${q}”` : 'Legnépszerűbb modpackek · kattints egyre a telepítéshez'}</p>
+          <p className="label">
+            {via === 'direct' ? 'A beillesztett modpack' : q ? `Találatok: „${q}”` : 'Legnépszerűbb modpackek · kattints egyre a telepítéshez'}
+          </p>
+          {source === 'curseforge' && via === 'mirror' && (
+            <Notice>
+              A CurseForge a kulcsodnak nem ad jogot a keresésre, ezért a keresés egy nyilvános tükrön (api.curse.tools) fut. A modpack adatai és
+              a letöltés továbbra is a hivatalos API-n, a saját kulcsoddal mennek. Ha a CurseForge konzolon új kulcsot generálsz, a kulcs újra
+              kereshet hivatalosan.
+            </Notice>
+          )}
           <div className="grid gap-px border border-line bg-line sm:grid-cols-2 xl:grid-cols-3">
             {loading && !results
               ? Array.from({ length: 6 }, (_, i) => <div key={i} className="h-44 animate-pulse bg-surface/80" />)

@@ -59,7 +59,10 @@ modlistából építi fel, és kihagyja a csak kliens oldali modokat. Utána tel
    Az ablak nyitva marad, amíg a backend fut. Ha bezárod, a backend (és a Minecraft szerver) leáll.
    A jelszót bármikor átírhatod a `backend/.env`-ben. Mentés után azonnal él, újraindítás nem kell.
 3. **CurseForge kulcs** (opcionális, a Modrinth nélküle is megy): <https://console.curseforge.com/> → *API Keys*, majd a
-   `backend/.env` fájlba: `CURSEFORGE_API_KEY='…'` (aposztrófok között), és indítsd újra a backendet.
+   `backend/.env` fájlba: `CURSEFORGE_API_KEY='…'` (aposztrófok között). Mentés után azonnal él.
+   Egyes kulcsok minden végpontot elérnek, csak a keresést nem (403). Ilyenkor a keresés a nyilvános `api.curse.tools`
+   tükrön fut, a modpack adatai és a letöltés továbbra is a hivatalos API-n, a saját kulccsal mennek. A keresőbe CurseForge
+   linket vagy projekt ID-t is beilleszthetsz.
 4. **Publikus HTTPS cím** a backendnek:
    ```powershell
    tailscale funnel --bg --https=10000 http://127.0.0.1:8765

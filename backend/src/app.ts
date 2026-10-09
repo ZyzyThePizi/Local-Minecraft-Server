@@ -274,11 +274,11 @@ function sourceParam(c: Context) {
 
 app.get('/api/admin/packs/search', async (c) => {
   const source = sourceParam(c);
-  const q = (c.req.query('q') ?? '').slice(0, 100);
+  const q = (c.req.query('q') ?? '').slice(0, 200);
   const page = Math.max(0, Math.min(50, Number(c.req.query('page') ?? 0) || 0));
-  if (source === 'vanilla') return c.json({ results: [] });
-  const results = source === 'curseforge' ? await curseforge.search(q, page) : await modrinth.search(q, page);
-  return c.json({ results });
+  if (source === 'vanilla') return c.json({ results: [], via: 'official' });
+  if (source === 'curseforge') return c.json(await curseforge.search(q, page));
+  return c.json({ results: await modrinth.search(q, page), via: 'official' });
 });
 
 app.get('/api/admin/packs/versions', async (c) => {
