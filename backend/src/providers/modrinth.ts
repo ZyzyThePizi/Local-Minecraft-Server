@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { restoreRequiredMods } from '../moddeps.ts';
 import { extractZip } from '../unzip.ts';
 import { download, downloadAll, fetchJson, safeJoin } from '../download.ts';
 import type { JobContext } from '../jobs.ts';
@@ -103,10 +104,12 @@ export async function install(ctx: JobContext, projectId: string, versionId: str
   if (!mcVersion) throw new Error('A modpack nem adja meg a Minecraft verziót.');
   ctx.log(`Minecraft ${mcVersion}, ${loader} ${loaderVersion ?? ''}`);
 
-  // Modrinth marks each file's environment, so client-only mods are skipped exactly.
+  // Modrinth marks each file's environment; a client-only mod that a server mod still requires is put back below.
   const files = index.files.filter((f) => f.env?.server !== 'unsupported');
-  const skipped = index.files.length - files.length;
-  if (skipped) ctx.log(`Kihagyva ${skipped} csak kliens oldali fájl.`);
+  const skipped = index.files
+    .filter((f) => f.env?.server === 'unsupported' && f.path.startsWith('mods/'))
+    .map((f) => ({ urls: f.downloads, dest: safeJoin(dir, f.path), sha1: f.hashes.sha1, name: f.path.slice(5) }));
+  if (skipped.length) ctx.log(`Kliens oldali modok (${skipped.length}): ${skipped.map((s) => s.name).join(', ')}`);
 
   ctx.stage(`Modok letöltése (${files.length} db)`, 0);
   await downloadAll(
@@ -114,6 +117,7 @@ export async function install(ctx: JobContext, projectId: string, versionId: str
     files.map((f) => ({ urls: f.downloads, dest: safeJoin(dir, f.path), sha1: f.hashes.sha1 })),
     'Modok letöltése',
   );
+  await restoreRequiredMods(ctx, join(dir, 'mods'), join(tmp, 'client-mods'), skipped);
 
   ctx.stage('Konfigurációk másolása');
   await copyOverrides(join(packDir, 'overrides'), dir);

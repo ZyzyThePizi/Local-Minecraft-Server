@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { cp, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { restoreRequiredMods } from '../moddeps.ts';
 import { extractZip } from '../unzip.ts';
 import { config, HttpError } from '../config.ts';
 import { download, downloadAll, fetchJson, formatBytes, safeJoin, type DownloadItem } from '../download.ts';
@@ -193,7 +194,7 @@ export async function install(ctx: JobContext, projectId: string, fileId: string
       ctx.log(`A szervercsomag nem használható (${err instanceof Error ? err.message : err}), a modlista alapján telepítek.`);
     }
   }
-  if (!done) await installFromManifest(ctx, manifest, packDir, dir, mod.slug);
+  if (!done) await installFromManifest(ctx, manifest, packDir, dir, tmp, mod.slug);
 
   return {
     name: mod.name,
@@ -282,7 +283,7 @@ async function preferModrinthMirror(ctx: JobContext, plan: DownloadItem[]) {
   if (mirrors.size) ctx.log(`Gyorsítás: ${mirrors.size} / ${plan.length} fájl (${formatBytes(bytes)}) a gyorsabb Modrinth CDN-ről jön, ugyanazzal a hash-sel.`);
 }
 
-async function installFromManifest(ctx: JobContext, manifest: CfManifest, packDir: string, dir: string, packSlug: string) {
+async function installFromManifest(ctx: JobContext, manifest: CfManifest, packDir: string, dir: string, tmp: string, packSlug: string) {
   ctx.stage('Modlista feldolgozása');
   const rules = await loadExcludeRules(ctx, packSlug);
   const required = manifest.files.filter((f) => f.required !== false);
@@ -296,25 +297,27 @@ async function installFromManifest(ctx: JobContext, manifest: CfManifest, packDi
   if (files.length < required.length) ctx.log(`Figyelem: ${required.length - files.length} fájl már nem érhető el a CurseForge-on.`);
 
   const plan: DownloadItem[] = [];
-  const skipped: string[] = [];
+  const skipped: (DownloadItem & { name: string })[] = [];
   for (const f of files) {
     const m = modById.get(f.modId);
     const classId = m?.classId ?? CLASS.mods;
     if (classId === CLASS.resourcePacks || classId === CLASS.shaders) continue;
+    const folder = classId === CLASS.dataPacks ? 'world/datapacks' : 'mods';
+    const item = { urls: [fileUrl(f)], dest: safeJoin(dir, `${folder}/${f.fileName}`), sha1: sha1Of(f), size: f.fileLength };
     const slug = m?.slug ?? '';
     const clientOnly = f.gameVersions.includes('Client') && !f.gameVersions.includes('Server');
     if (!rules.forceInclude.has(slug) && (rules.exclude.has(slug) || clientOnly)) {
-      skipped.push(m?.name ?? f.fileName);
+      if (folder === 'mods') skipped.push({ ...item, name: m?.name ?? f.fileName });
       continue;
     }
-    const folder = classId === CLASS.dataPacks ? 'world/datapacks' : 'mods';
-    plan.push({ urls: [fileUrl(f)], dest: safeJoin(dir, `${folder}/${f.fileName}`), sha1: sha1Of(f), size: f.fileLength });
+    plan.push(item);
   }
-  if (skipped.length) ctx.log(`Kihagyva, mert csak kliens oldali (${skipped.length}): ${skipped.join(', ')}`);
+  if (skipped.length) ctx.log(`Kliens oldali modok (${skipped.length}): ${skipped.map((s) => s.name).join(', ')}`);
 
-  await preferModrinthMirror(ctx, plan);
+  await preferModrinthMirror(ctx, [...plan, ...skipped]);
   ctx.stage(`Modok letöltése (${plan.length} db)`, 0);
   await downloadAll(ctx, plan, 'Modok letöltése');
+  await restoreRequiredMods(ctx, join(dir, 'mods'), join(tmp, 'client-mods'), skipped);
 
   ctx.stage('Konfigurációk másolása');
   await copyOverrides(join(packDir, manifest.overrides ?? 'overrides'), dir);

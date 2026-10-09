@@ -42,7 +42,10 @@ hajszálvonalak, sarokjelölők, Space Grotesk és JetBrains Mono.
 | playit.gg | A játékforgalom (TCP 25565). A Funnel ezt nem tudja vinni, mert csak TLS forgalmat irányít. |
 
 **Modpack telepítés:** a backend letölti a csomagot. CurseForge-nál, ha van hivatalos szervercsomag, azt használja, különben a
-modlistából építi fel, és kihagyja a csak kliens oldali modokat. Utána telepíti a loadert (Forge / NeoForge / Fabric / Quilt),
+modlistából építi fel, és kihagyja a csak kliens oldali modokat. A kihagyott modokat félreteszi, és amelyiket egy
+szerveren maradó mod a saját `mods.toml` / `fabric.mod.json` fájlja szerint kötelezően igényli, azt visszarakja (a
+CurseForge „Client” jelölése néha téves, és egy hiányzó függőség indításkor leállítja a szervert). Ha a szerver mégis
+összeomlik, a konzol a crash report lényegét is kiírja. Utána telepíti a loadert (Forge / NeoForge / Fabric / Quilt),
 és letölti a Minecraft verzióhoz illő Java-t (Temurin 8 / 17 / 21 / 25). Minden telepítés **külön szerver** (`data/instances/…`),
 így a régi világ megmarad, és a „Szerverek” fülön vissza lehet rá váltani.
 

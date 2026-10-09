@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { writeFile } from 'node:fs/promises';
+import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { HttpError } from './config.ts';
@@ -98,10 +98,31 @@ class ServerManager {
     const expected = this.state === 'stopping' || code === 0;
     this.state = expected ? 'stopped' : 'crashed';
     this.panel(expected ? 'A szerver leállt.' : `A szerver összeomlott (kilépési kód: ${code}). Nézd meg a fenti naplót.`);
+    if (!expected && this.instanceId && this.startedAt) void this.explainCrash(serverDir(this.instanceId), this.startedAt);
     this.proc = null;
     this.startedAt = null;
     this.players.clear();
     for (const resolveWait of this.exitWaiters.splice(0)) resolveWait();
+  }
+
+  /** Surfaces the gist of a crash report written during this run (the console usually only says "see crash report"). */
+  private async explainCrash(dir: string, since: number) {
+    try {
+      const reports = join(dir, 'crash-reports');
+      const files = await Promise.all((await readdir(reports)).map(async (f) => ({ f, t: (await stat(join(reports, f))).mtimeMs })));
+      const latest = files.filter((x) => x.t >= since).sort((a, b) => b.t - a.t)[0];
+      if (!latest) return;
+      const text = await readFile(join(reports, latest.f), 'utf8');
+      const reasons = [...new Set([...text.matchAll(/Failure message: (.+)/g)].map((m) => m[1]!.trim()))];
+      const description = /^Description: (.+)$/m.exec(text)?.[1];
+      this.panel(`Crash report: crash-reports/${latest.f}${description ? ` (${description.trim()})` : ''}`);
+      for (const reason of reasons.slice(0, 10)) this.panel(`  ${reason}`);
+      if (reasons.some((r) => /requires .+ or above/.test(r))) {
+        this.panel('Hiányzó modfüggőség. Telepítsd újra a modpacket a panelről: az új telepítő a hiányzó modokat is felrakja.');
+      }
+    } catch {
+      // no crash report folder
+    }
   }
 
   /** Sends `stop` and waits for the process to exit, killing it after a timeout (or right away with `force`). */
