@@ -160,7 +160,7 @@ export default function App() {
     <>
       <WorldCanvas state={worldState} />
 
-      <header className="glass fixed inset-x-0 top-0 z-30 h-[var(--nav-h)] border-b border-line">
+      <header className="fixed inset-x-0 top-0 z-30 bg-bg/90 backdrop-blur-xl h-[var(--nav-h)] border-b border-line">
         <div className="mx-auto flex h-full max-w-[1440px] items-center justify-between gap-4 px-[var(--shell-pad)]">
           <a href="#top" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="flex items-center gap-3">
             <GrassBlock className="size-7" />
@@ -227,7 +227,7 @@ export default function App() {
               </div>
             </div>
 
-            <nav className="glass sticky top-[var(--nav-h)] z-20 border-y border-line" aria-label="Admin fülek">
+            <nav className="sticky top-[var(--nav-h)] z-20 bg-bg/90 backdrop-blur-xl border-y border-line" aria-label="Admin fülek">
               <div className="mx-auto flex max-w-[1440px] overflow-x-auto px-[var(--shell-pad)]">
                 {TABS.map((t, i) => (
                   <button
