@@ -63,7 +63,7 @@ export const paths = {
   secret: resolve(config.dataDir, 'secret.key'),
 };
 
-export const USER_AGENT = 'ZyzyThePizi/minecraft-panel/1.0 (+https://github.com/ZyzyThePizi/minecraft)';
+export const USER_AGENT = 'ZyzyThePizi/Local-Minecraft-Server/1.0 (+https://github.com/ZyzyThePizi/Local-Minecraft-Server)';
 
 /** Error with an HTTP status and a stable code the UI can react to. */
 export class HttpError extends Error {

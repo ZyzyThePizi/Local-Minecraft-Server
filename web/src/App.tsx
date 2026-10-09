@@ -137,7 +137,7 @@ export default function App() {
 
   const serverState: WorldState['server'] =
     phase.kind === 'offline' ? 'offline' : phase.kind === 'discovering' || !status.data ? 'loading' : status.data.state;
-  // Dev-only preview of the player avatars: http://localhost:5173/minecraft/?demo
+  // Dev-only preview of the player avatars: http://localhost:5173/Local-Minecraft-Server/?demo
   const demo = import.meta.env.DEV && new URLSearchParams(location.search).has('demo');
   const playerCount = serverState === 'running' ? (demo ? 4 : (status.data?.players ?? 0)) : 0;
   const playerNamesKey = demo ? 'ZyzyThePizi|Alex|Notch|Steve' : (overview.data?.server.players.join('|') ?? '');

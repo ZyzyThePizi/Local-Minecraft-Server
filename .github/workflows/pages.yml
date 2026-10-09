@@ -1,4 +1,4 @@
-# Builds the web panel and publishes it to https://zyzythepizi.github.io/minecraft/
+# Builds the web panel and publishes it to https://zyzythepizi.github.io/Local-Minecraft-Server/
 # The backend URLs come from the repository variable API_URLS (comma separated),
 # e.g. https://gep.tailXXXX.ts.net:10000,https://laptop.tailXXXX.ts.net:10000
 name: Deploy panel
