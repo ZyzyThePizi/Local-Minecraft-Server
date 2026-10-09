@@ -1,8 +1,8 @@
-import { CheckCircle2, ChevronDown, LoaderCircle, Play, XCircle } from 'lucide-react';
+import { ChevronDown, Play } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { get } from '../api';
 import type { Job } from '../types';
-import { Button, Card } from './ui';
+import { Button } from './ui';
 
 export function JobProgress({
   initial,
@@ -33,62 +33,64 @@ export function JobProgress({
   }, [job, onFinished]);
 
   const pct = job.progress === null ? null : Math.round(job.progress * 100);
+  const tone = job.state === 'error' ? 'border-danger/50' : job.state === 'done' ? 'border-signal/50 brackets-signal' : 'border-line';
   return (
-    <Card className={job.state === 'error' ? 'border-danger/40' : job.state === 'done' ? 'border-accent/40' : ''}>
-      <div className="flex items-start gap-3">
-        {job.state === 'running' && <LoaderCircle className="mt-0.5 size-5 shrink-0 animate-spin text-accent" aria-hidden />}
-        {job.state === 'done' && <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-accent" aria-hidden />}
-        {job.state === 'error' && <XCircle className="mt-0.5 size-5 shrink-0 text-danger" aria-hidden />}
-        <div className="min-w-0 flex-1">
-          <p className="font-semibold">
-            {job.state === 'running' && `${job.title} telepítése…`}
-            {job.state === 'done' && `${job.title} telepítve!`}
-            {job.state === 'error' && 'A telepítés nem sikerült'}
-          </p>
-          <p className="mt-0.5 text-sm text-muted">{job.state === 'error' ? job.error : job.stage}</p>
-
-          {job.state === 'running' && (
-            <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface-2" role="progressbar" aria-valuenow={pct ?? undefined} aria-valuemin={0} aria-valuemax={100}>
-              <div
-                className={`h-full rounded-full bg-accent transition-[width] duration-500 ${pct === null ? 'w-1/3 animate-pulse' : ''}`}
-                style={pct === null ? undefined : { width: `${Math.max(3, pct)}%` }}
-              />
-            </div>
-          )}
-
-          {job.state === 'done' && (
-            <div className="mt-4 flex flex-wrap gap-2">
-              {job.result?.activated ? (
-                <Button variant="primary" onClick={onStart} icon={<Play className="size-4" />}>
-                  Szerver indítása
-                </Button>
-              ) : (
-                <p className="text-sm text-muted">Egy másik szerver fut, ezért ezt a Szerverek fülön tudod aktiválni.</p>
-              )}
-              <Button variant="ghost" onClick={onDismiss}>
-                Bezárás
-              </Button>
-            </div>
-          )}
-          {job.state === 'error' && (
-            <div className="mt-3">
-              <Button variant="ghost" onClick={onDismiss}>
-                Bezárás
-              </Button>
-            </div>
-          )}
-
-          <button onClick={() => setShowLog((v) => !v)} className="mt-3 inline-flex items-center gap-1 text-xs text-muted hover:text-ink">
-            <ChevronDown className={`size-3.5 transition-transform ${showLog ? 'rotate-180' : ''}`} />
-            Részletek
-          </button>
-          {showLog && (
-            <pre className="mt-2 max-h-64 overflow-auto rounded-lg border border-line bg-bg p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-muted">
-              {job.log.join('\n')}
-            </pre>
-          )}
-        </div>
+    <section className={`brackets glass animate-rise border ${tone}`}>
+      <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3 sm:px-6">
+        <span className="label">
+          <span className="text-signal">●</span> Telepítés
+        </span>
+        <span className={`readout text-sm ${job.state === 'error' ? 'text-danger' : 'text-signal'}`}>
+          {job.state === 'running' ? (pct === null ? '…' : `${pct}%`) : job.state === 'done' ? 'KÉSZ' : 'HIBA'}
+        </span>
       </div>
-    </Card>
+      <div className="px-5 py-5 sm:px-6">
+        <p className="text-xl font-semibold tracking-tight">
+          {job.state === 'running' && `${job.title} telepítése`}
+          {job.state === 'done' && `${job.title} telepítve`}
+          {job.state === 'error' && 'A telepítés nem sikerült'}
+        </p>
+        <p className="mt-1 text-sm text-fg-muted">{job.state === 'error' ? job.error : job.stage}</p>
+
+        {job.state === 'running' && (
+          <div className="mt-4 h-1.5 overflow-hidden bg-line" role="progressbar" aria-valuenow={pct ?? undefined} aria-valuemin={0} aria-valuemax={100}>
+            <div
+              className={`h-full origin-left bg-signal transition-transform duration-500 ${pct === null ? 'w-1/3 animate-pulse' : 'w-full'}`}
+              style={pct === null ? undefined : { transform: `scaleX(${Math.max(0.03, pct / 100)})` }}
+            />
+          </div>
+        )}
+
+        {job.state === 'done' && (
+          <div className="mt-5 flex flex-wrap items-center gap-2">
+            {job.result?.activated ? (
+              <Button variant="primary" onClick={onStart} icon={<Play className="size-4" />}>
+                Szerver indítása
+              </Button>
+            ) : (
+              <p className="text-sm text-fg-muted">Egy másik szerver fut, ezért ezt a Szerverek fülön tudod aktiválni.</p>
+            )}
+            <Button variant="ghost" onClick={onDismiss}>
+              Bezárás
+            </Button>
+          </div>
+        )}
+        {job.state === 'error' && (
+          <Button variant="ghost" onClick={onDismiss} className="mt-4">
+            Bezárás
+          </Button>
+        )}
+
+        <button onClick={() => setShowLog((v) => !v)} className="label mt-4 inline-flex items-center gap-1 hover:text-fg">
+          <ChevronDown className={`size-3.5 transition-transform ${showLog ? 'rotate-180' : ''}`} />
+          Részletek
+        </button>
+        {showLog && (
+          <pre className="mt-2 max-h-64 overflow-auto border border-line bg-bg/80 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-fg-muted">
+            {job.log.join('\n')}
+          </pre>
+        )}
+      </div>
+    </section>
   );
 }

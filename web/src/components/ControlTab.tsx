@@ -1,10 +1,10 @@
-import { Clock, MemoryStick, Package, Play, RotateCw, Skull, Square } from 'lucide-react';
+import { Package, Play, RotateCw, Skull, Square } from 'lucide-react';
 import { useState } from 'react';
 import { ApiError, post } from '../api';
 import { formatMemory, LOADER_LABEL, uptime } from '../format';
 import type { Overview } from '../types';
 import { Console } from './Console';
-import { Button, Card, CardTitle, Chip, Notice, PackIcon } from './ui';
+import { Button, Notice, PackIcon, Panel, PanelTitle, StateLabel } from './ui';
 
 export function ControlTab({
   overview,
@@ -42,103 +42,104 @@ export function ControlTab({
 
   if (!instance) {
     return (
-      <Card className="py-10 text-center">
-        <Package className="mx-auto mb-3 size-10 text-muted" aria-hidden />
-        <h2 className="text-lg font-semibold">Még nincs szerver</h2>
-        <p className="mx-auto mt-1 mb-5 max-w-sm text-sm text-muted">Keress egy modpacket a CurseForge-on vagy a Modrinth-en, vagy indíts egy sima vanilla szervert.</p>
+      <Panel className="mx-auto max-w-xl py-12 text-center">
+        <Package className="mx-auto mb-4 size-9 text-fg-faint" aria-hidden />
+        <h2 className="text-2xl font-semibold tracking-tight">Még nincs szerver</h2>
+        <p className="mx-auto mt-2 mb-6 max-w-sm text-fg-muted">Keress egy modpacket a CurseForge-on vagy a Modrinth-en, vagy indíts egy sima vanilla szervert.</p>
         <Button variant="primary" onClick={goToPacks}>
           Modpack választása
         </Button>
-      </Card>
+      </Panel>
     );
   }
 
   const canStart = state === 'stopped' || state === 'crashed';
   return (
-    <div className="space-y-5">
-      <Card>
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-center">
-          <div className="flex min-w-0 flex-1 items-center gap-4">
+    <div className="grid gap-5 lg:grid-cols-12">
+      <div className="space-y-5 lg:col-span-4">
+        <Panel signal={state === 'running'}>
+          <PanelTitle aside={<StateLabel state={state} />}>
+            Szerver
+          </PanelTitle>
+          <div className="flex items-center gap-4">
             <PackIcon src={instance.iconUrl} className="size-14 shrink-0" />
             <div className="min-w-0">
-              <p className="truncate font-semibold">{instance.name}</p>
-              <div className="mt-1 flex flex-wrap gap-1.5">
-                <Chip>MC {instance.mcVersion}</Chip>
-                <Chip tone="info">
-                  {LOADER_LABEL[instance.loader]} {instance.loaderVersion ?? ''}
-                </Chip>
-                <Chip>
-                  <MemoryStick className="mr-1 size-3" aria-hidden />
-                  {formatMemory(instance.memoryMb)}
-                </Chip>
-                {server.startedAt && state === 'running' && (
-                  <Chip tone="accent">
-                    <Clock className="mr-1 size-3" aria-hidden />
-                    {uptime(server.startedAt)}
-                  </Chip>
-                )}
-              </div>
+              <p className="line-clamp-2 font-semibold leading-snug">{instance.name}</p>
+              <p className="label mt-1">
+                MC {instance.mcVersion} · {LOADER_LABEL[instance.loader]} {instance.loaderVersion ?? ''}
+              </p>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
+
+          <dl className="mt-5 grid grid-cols-2 border border-line">
+            <div className="border-r border-line px-4 py-3">
+              <dt className="label">Memória</dt>
+              <dd className="readout mt-1">{formatMemory(instance.memoryMb)}</dd>
+            </div>
+            <div className="px-4 py-3">
+              <dt className="label">Üzemidő</dt>
+              <dd className="readout mt-1">{server.startedAt && state === 'running' ? uptime(server.startedAt) : '–'}</dd>
+            </div>
+          </dl>
+
+          <div className="mt-5 flex flex-wrap gap-2">
             {canStart ? (
-              <Button variant="primary" busy={busy === 'start'} onClick={() => act('start')} icon={<Play className="size-4" />} className="min-w-32">
+              <Button variant="primary" busy={busy === 'start'} onClick={() => act('start')} icon={<Play className="size-4" />} className="flex-1">
                 Indítás
               </Button>
             ) : (
               <>
-                <Button
-                  variant="danger"
-                  busy={busy === 'stop'}
-                  disabled={state === 'stopping'}
-                  onClick={() => act('stop')}
-                  icon={<Square className="size-4" />}
-                >
+                <Button variant="danger" busy={busy === 'stop'} disabled={state === 'stopping'} onClick={() => act('stop')} icon={<Square className="size-4" />} className="flex-1">
                   Leállítás
                 </Button>
-                <Button busy={busy === 'restart'} disabled={state !== 'running'} onClick={() => act('restart')} icon={<RotateCw className="size-4" />}>
+                <Button busy={busy === 'restart'} disabled={state !== 'running'} onClick={() => act('restart')} icon={<RotateCw className="size-4" />} className="flex-1">
                   Újraindítás
                 </Button>
-                {state === 'stopping' && (
-                  <Button variant="ghost" busy={busy === 'kill'} onClick={() => act('kill')} icon={<Skull className="size-4" />}>
-                    Kényszerített leállítás
-                  </Button>
-                )}
               </>
             )}
           </div>
-        </div>
-        {error && (
-          <div className="mt-4">
-            <Notice tone="danger">{error}</Notice>
-          </div>
-        )}
-        {state === 'starting' && instance.loader !== 'vanilla' && (
-          <p className="mt-4 text-sm text-muted">Modpackeknél az első indítás akár több percig is tarthat.</p>
-        )}
-      </Card>
-
-      {state === 'running' && (
-        <Card>
-          <CardTitle>Online játékosok ({server.players.length})</CardTitle>
-          {server.players.length ? (
-            <div className="flex flex-wrap gap-2">
-              {server.players.map((p) => (
-                <span key={p} className="inline-flex items-center gap-2 rounded-lg border border-line bg-surface-2 py-1 pr-3 pl-1 text-sm">
-                  <img src={`https://mc-heads.net/avatar/${encodeURIComponent(p)}/24`} alt="" className="pixel size-6 rounded" />
-                  {p}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted">Most senki sincs fent.</p>
+          {state === 'stopping' && (
+            <Button variant="ghost" busy={busy === 'kill'} onClick={() => act('kill')} icon={<Skull className="size-4" />} className="mt-2 w-full">
+              Kényszerített leállítás
+            </Button>
           )}
-        </Card>
-      )}
+          {error && (
+            <div className="mt-4">
+              <Notice tone="danger">{error}</Notice>
+            </div>
+          )}
+          {state === 'starting' && instance.loader !== 'vanilla' && <p className="mt-4 text-sm text-fg-faint">Modpackeknél az első indítás akár több percig is tarthat.</p>}
+        </Panel>
 
-      <div>
-        <h2 className="mb-3 text-base font-semibold">Konzol</h2>
-        <Console canSend={state === 'running' || state === 'starting'} />
+        <Panel>
+          <PanelTitle aside={<span className="readout text-sm text-fg-muted">{server.players.length}</span>}>
+            Online játékosok
+          </PanelTitle>
+          {state === 'running' && server.players.length ? (
+            <ul className="space-y-2">
+              {server.players.map((p) => (
+                <li key={p} className="flex items-center gap-3 border border-line bg-bg/50 px-2 py-1.5">
+                  <img src={`https://mc-heads.net/avatar/${encodeURIComponent(p)}/28`} alt="" className="pixel size-7" />
+                  <span className="readout text-sm">{p}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-fg-faint">{state === 'running' ? 'Most senki sincs fent.' : 'A szerver nem fut.'}</p>
+          )}
+        </Panel>
+      </div>
+
+      <div className="lg:col-span-8">
+        <Panel className="!p-0">
+          <div className="flex items-center justify-between border-b border-line px-5 py-3 sm:px-6">
+            <h2 className="label !text-fg-muted">
+              Konzol
+            </h2>
+            <span className="label hidden sm:inline">↑ ↓ parancselőzmények</span>
+          </div>
+          <Console canSend={state === 'running' || state === 'starting'} />
+        </Panel>
       </div>
     </div>
   );

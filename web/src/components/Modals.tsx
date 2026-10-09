@@ -21,10 +21,10 @@ export function EulaModal({ retry, onClose }: { retry: (() => Promise<void>) | n
   return (
     <Modal open={retry !== null} onClose={onClose} title="Minecraft EULA">
       <div className="space-y-4 text-sm">
-        <p className="text-muted">
+        <p className="text-fg-muted">
           A szerver futtatásához el kell fogadnod a Mojang felhasználási feltételeit (EULA). Ezt csak egyszer kell megtenned.
         </p>
-        <a href="https://aka.ms/MinecraftEULA" target="_blank" rel="noreferrer" className="inline-block text-accent hover:underline">
+        <a href="https://aka.ms/MinecraftEULA" target="_blank" rel="noreferrer" className="inline-block text-signal hover:underline">
           Az EULA elolvasása →
         </a>
         {error && <Notice tone="danger">{error}</Notice>}
@@ -52,13 +52,13 @@ export function BackendModal({ open, onClose, onChanged }: { open: boolean; onCl
   return (
     <Modal open={open} onClose={onClose} title="Backend cím">
       <div className="space-y-4 text-sm">
-        <p className="text-muted">
+        <p className="text-fg-muted">
           Az oldal magától megkeresi, melyik gépen fut a backend. Ha egy új gépet használsz, itt megadhatod a címét (pl. a Tailscale Funnel
           címet).
         </p>
         {builtInUrls().length > 0 && (
           <div>
-            <p className="mb-1 text-xs font-medium text-muted">Beépített címek:</p>
+            <p className="mb-1 text-xs font-medium text-fg-muted">Beépített címek:</p>
             <ul className="space-y-1 font-mono text-xs">
               {builtInUrls().map((u) => (
                 <li key={u} className="truncate">

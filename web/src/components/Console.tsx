@@ -1,7 +1,7 @@
 import { SendHorizontal } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { ApiError, get, post } from '../api';
-import { Button, inputClass } from './ui';
+import { Button } from './ui';
 
 interface Line {
   seq: number;
@@ -11,11 +11,11 @@ interface Line {
 const MAX_LINES = 1500;
 
 function lineClass(line: string) {
-  if (line.startsWith('[Panel]')) return 'text-accent';
-  if (line.startsWith('> ')) return 'text-info';
+  if (line.startsWith('[Panel]')) return 'text-signal';
+  if (line.startsWith('> ')) return 'text-fg';
   if (/\bERROR\b|Exception|FATAL/.test(line)) return 'text-danger';
   if (/\bWARN\b/.test(line)) return 'text-warn';
-  return 'text-ink/85';
+  return 'text-fg-muted';
 }
 
 export function Console({ canSend }: { canSend: boolean }) {
@@ -94,16 +94,16 @@ export function Console({ canSend }: { canSend: boolean }) {
   };
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-line bg-[#0a0c0b]">
+    <div className="bg-bg/80">
       <div
         ref={box}
         onScroll={onScroll}
-        className="h-[min(55vh,480px)] overflow-y-auto px-4 py-3 font-mono text-[12.5px] leading-relaxed"
+        className="h-[min(62vh,560px)] overflow-y-auto px-5 py-4 font-mono text-[12.5px] leading-relaxed sm:px-6"
         role="log"
         aria-live="off"
       >
         {lines.length === 0 ? (
-          <p className="text-muted">A szerver naplója itt jelenik meg.</p>
+          <p className="text-fg-faint">A szerver naplója itt jelenik meg.</p>
         ) : (
           lines.map((l) => (
             <div key={l.seq} className={`break-words whitespace-pre-wrap ${lineClass(l.line)}`}>
@@ -112,21 +112,24 @@ export function Console({ canSend }: { canSend: boolean }) {
           ))
         )}
       </div>
-      <form onSubmit={send} className="flex gap-2 border-t border-line bg-surface p-2">
+      <form onSubmit={send} className="flex items-stretch border-t border-line">
+        <span className="flex items-center pl-5 font-mono text-signal sm:pl-6" aria-hidden>
+          &gt;
+        </span>
         <input
           value={command}
           onChange={(e) => setCommand(e.target.value)}
           onKeyDown={onKeyDown}
           disabled={!canSend}
-          placeholder={canSend ? 'Parancs, pl. say Sziasztok! · whitelist add Steve · op Steve' : 'A parancsokhoz indítsd el a szervert'}
-          className={`${inputClass} font-mono`}
+          placeholder={canSend ? 'say Sziasztok! · whitelist add Steve · op Steve' : 'A parancsokhoz indítsd el a szervert'}
+          className="h-12 min-w-0 flex-1 bg-transparent px-3 font-mono text-sm text-fg placeholder:text-fg-faint/80 focus:outline-none disabled:opacity-50"
           aria-label="Szerver parancs"
         />
-        <Button type="submit" variant="primary" busy={sending} disabled={!canSend || !command.trim()} icon={<SendHorizontal className="size-4" />}>
+        <Button type="submit" variant="primary" busy={sending} disabled={!canSend || !command.trim()} icon={<SendHorizontal className="size-4" />} className="!h-12">
           <span className="hidden sm:inline">Küldés</span>
         </Button>
       </form>
-      {error && <p className="border-t border-line px-4 py-2 text-sm text-danger">{error}</p>}
+      {error && <p className="border-t border-line px-5 py-2 text-sm text-danger">{error}</p>}
     </div>
   );
 }

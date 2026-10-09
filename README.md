@@ -6,6 +6,23 @@ Saját gépen (PC vagy laptop) futó Minecraft szerver, amit egy publikus webold
 - A **nyilvános oldal** mindenkinek mutatja, hogy fut-e a szerver, hány játékos van fent, és a csatlakozási címet.
 - **Admin belépés** után: indítás, leállítás, konzol, `server.properties`, memória, és **modpack telepítés keresésből egy kattintással**
   (CurseForge, Modrinth vagy vanilla).
+- Az egész oldal egy **élő, Three.js-ben renderelt Minecraft-sziget** fölött úszik, és a világ a szerver állapotát mutatja.
+
+### Az élő világ
+
+| A szerver állapota | A szigeten |
+|---|---|
+| fut | nappal van, a beacon lime fénysugara az égig ér, az online játékosok Steve-ként sétálnak (admin nézetben névtáblával) |
+| indul / leáll | hajnal vagy alkony, a beacon pislákol |
+| leállítva / a gép ki van kapcsolva | éjszaka: csillagok, szentjánosbogarak, zombik és creeperek |
+| összeomlott | vöröses, viharos éjszaka |
+| modpack telepítés | a láda kinyílik, és szikrák szállnak fel belőle |
+
+Az admin fülek a sziget egy-egy állomásához tartoznak, a kamera odarepül: **Vezérlés** → beacon, **Modpack** → láda,
+**Beállítások** → barkácsasztal, **Szerverek** → Nether-portál. Malacok, tehenek, birkák és csirkék kóborolnak a terepen.
+Minden textúra futásidőben készül (nincs letöltendő kép), a 3D világ külön chunkban, az első rajzolás után töltődik be,
+`prefers-reduced-motion` esetén egyetlen álló képkocka. A dizájnrendszer ugyanaz, mint a portfólióé: egy lime kiemelőszín,
+hajszálvonalak, sarokjelölők, Space Grotesk és JetBrains Mono.
 
 ```
  böngésző ──► GitHub Pages (statikus UI)
@@ -19,7 +36,7 @@ Saját gépen (PC vagy laptop) futó Minecraft szerver, amit egy publikus webold
 
 | Rész | Mit csinál |
 |---|---|
-| `web/` | React + Vite UI, a GitHub Actions telepíti Pages-re. Maga keresi meg, melyik gépen fut épp a backend (`API_URLS`). |
+| `web/` | React + Vite + Tailwind UI, a `web/src/world/` alatt a Three.js világ (terep, mobok, ég). A GitHub Actions telepíti Pages-re, és maga keresi meg, melyik gépen fut épp a backend (`API_URLS`). |
 | `backend/` | Node 24+ (TypeScript, build nélkül). Indítja és felügyeli a szervert, telepíti a modpackeket, a loadert és a Javát. |
 | Tailscale Funnel | Stabil, publikus HTTPS címet ad a backendnek, routerállítás és port forward nélkül. |
 | playit.gg | A játékforgalom (TCP 25565). A Funnel ezt nem tudja vinni, mert csak TLS forgalmat irányít. |
@@ -39,6 +56,8 @@ modlistából építi fel, és kihagyja a csak kliens oldali modokat. Utána tel
    .\start-backend.bat
    ```
    Az első indításkor létrejön a `backend/.env`, benne egy **generált admin jelszóval** (a konzol is kiírja).
+   Az ablak nyitva marad, amíg a backend fut. Ha bezárod, a backend (és a Minecraft szerver) leáll.
+   A jelszót bármikor átírhatod a `backend/.env`-ben. Mentés után azonnal él, újraindítás nem kell.
 3. **CurseForge kulcs** (opcionális, a Modrinth nélküle is megy): <https://console.curseforge.com/> → *API Keys*, majd a
    `backend/.env` fájlba: `CURSEFORGE_API_KEY='…'` (aposztrófok között), és indítsd újra a backendet.
 4. **Publikus HTTPS cím** a backendnek:
@@ -79,6 +98,7 @@ kapcsolóval a Minecraft szerver is elindul a backenddel. A Tailscale Funnel `--
 npm install
 npm run dev:backend   # http://127.0.0.1:8765
 npm run dev:web       # http://localhost:5173/minecraft/  (helyben a 127.0.0.1:8765 backendet keresi)
+                      # ...?demo  → mintajátékosok a szigeten (csak fejlesztői módban)
 npm run typecheck
 ```
 

@@ -48,6 +48,7 @@ export interface Overview {
   settings: Settings;
   system: { totalMemoryMb: number; recommendedMemoryMb: number; platform: string };
   curseforgeConfigured: boolean;
+  installing: boolean;
 }
 
 export interface PackSummary {

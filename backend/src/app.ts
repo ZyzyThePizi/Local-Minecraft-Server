@@ -5,7 +5,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { checkPassword, issueToken, loginRetryAfter, recordLoginFailure, recordLoginSuccess, verifyToken } from './auth.ts';
 import { config, HttpError, reloadEnv } from './config.ts';
 import { recommendedMemory, startInstall, totalMemoryMb, type InstallRequest } from './install.ts';
-import { getJob, latestJob } from './jobs.ts';
+import { getJob, latestJob, runningJob } from './jobs.ts';
 import { readProperties, writeProperties } from './properties.ts';
 import * as curseforge from './providers/curseforge.ts';
 import * as modrinth from './providers/modrinth.ts';
@@ -147,6 +147,7 @@ app.get('/api/admin/overview', async (c) => {
       platform: process.platform,
     },
     curseforgeConfigured: Boolean(config.curseforgeApiKey),
+    installing: runningJob('install') !== null,
   });
 });
 

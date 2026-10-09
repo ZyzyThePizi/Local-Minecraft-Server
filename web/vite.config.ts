@@ -6,4 +6,6 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   base: process.env.BASE_PATH ?? '/minecraft/',
   plugins: [react(), tailwindcss()],
+  // The 3D world (three.js) is one lazy chunk by design, loaded after the first paint.
+  build: { chunkSizeWarningLimit: 650 },
 });

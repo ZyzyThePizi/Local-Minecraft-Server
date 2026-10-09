@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ApiError, get, patch, put } from '../api';
 import { formatMemory } from '../format';
 import type { InstanceSummary, Overview, Settings } from '../types';
-import { Button, Card, CardTitle, Field, inputClass, Notice, Toggle } from './ui';
+import { Button, Field, inputClass, Notice, Panel, PanelTitle, Skeleton, Toggle } from './ui';
 
 type Props = Record<string, string>;
 
@@ -44,7 +44,7 @@ const FIELDS: { group: string; items: { key: string; label: string; type: 'text'
   {
     group: 'Hozzáférés',
     items: [
-      { key: 'white-list', label: 'Whitelist', type: 'bool', hint: 'Csak a felvett játékosok léphetnek be. Felvétel: konzolban „whitelist add Név”.' },
+      { key: 'white-list', label: 'Whitelist', type: 'bool', hint: 'Csak a felvett játékosok léphetnek be. Felvétel a konzolban: whitelist add Név' },
       { key: 'enforce-whitelist', label: 'Whitelist kikényszerítése', type: 'bool' },
       { key: 'online-mode', label: 'Online mód (eredeti fiók kell)', type: 'bool', hint: 'Kikapcsolva bárki bármilyen névvel beléphet, ezt ne kapcsold ki.' },
     ],
@@ -69,25 +69,27 @@ const DEFAULTS: Props = {
 
 export function SettingsTab({ overview, refresh }: { overview: Overview; refresh: () => void }) {
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-      <div className="space-y-5">
+    <div className="grid gap-5 lg:grid-cols-12">
+      <div className="space-y-5 lg:col-span-5">
         <PanelSettings settings={overview.settings} refresh={refresh} />
         {overview.instance && <MemorySettings key={overview.instance.id} instance={overview.instance} overview={overview} refresh={refresh} />}
       </div>
-      {overview.instance ? (
-        <PropertiesEditor key={overview.instance.id} running={overview.server.state !== 'stopped' && overview.server.state !== 'crashed'} />
-      ) : (
-        <Card>
-          <p className="text-sm text-muted">A server.properties egy szerver telepítése után szerkeszthető.</p>
-        </Card>
-      )}
+      <div className="lg:col-span-7">
+        {overview.instance ? (
+          <PropertiesEditor key={overview.instance.id} running={overview.server.state !== 'stopped' && overview.server.state !== 'crashed'} />
+        ) : (
+          <Panel>
+            <p className="text-sm text-fg-muted">A server.properties egy szerver telepítése után szerkeszthető.</p>
+          </Panel>
+        )}
+      </div>
     </div>
   );
 }
 
 function SaveRow({ busy, dirty, onSave, message }: { busy: boolean; dirty: boolean; onSave: () => void; message: ReactNode }) {
   return (
-    <div className="mt-5 flex items-center justify-end gap-3">
+    <div className="mt-6 flex items-center justify-end gap-3 border-t border-line pt-4">
       {message}
       <Button variant="primary" busy={busy} disabled={!dirty} onClick={onSave} icon={<Save className="size-4" />}>
         Mentés
@@ -103,7 +105,7 @@ function useSaver() {
     setBusy(true);
     setMessage(null);
     try {
-      setMessage((await fn()) ?? <span className="text-sm text-accent">Elmentve.</span>);
+      setMessage((await fn()) ?? <span className="label !text-signal">Elmentve</span>);
     } catch (err) {
       setMessage(<span className="text-sm text-danger">{err instanceof ApiError ? err.message : 'Nem sikerült menteni.'}</span>);
     } finally {
@@ -112,6 +114,8 @@ function useSaver() {
   };
   return { busy, message, run };
 }
+
+const restartNote = <span className="text-sm text-warn">Elmentve, újraindítás után lép életbe.</span>;
 
 function PanelSettings({ settings, refresh }: { settings: Settings; refresh: () => void }) {
   const [address, setAddress] = useState(settings.gameAddress);
@@ -123,24 +127,19 @@ function PanelSettings({ settings, refresh }: { settings: Settings; refresh: () 
     });
 
   return (
-    <Card>
-      <CardTitle>Panel</CardTitle>
-      <div className="space-y-4">
+    <Panel>
+      <PanelTitle>Panel</PanelTitle>
+      <div className="space-y-5">
         <Field label="Csatlakozási cím a játékosoknak" hint="Pl. a playit.gg-től kapott cím. Ez jelenik meg a nyilvános oldalon.">
-          <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="valami.joinmc.link" className={`${inputClass} font-mono`} />
+          <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="valami.joinmc.link" className={`${inputClass} readout`} />
         </Field>
-        <Toggle
-          checked={settings.autoStart}
-          onChange={(v) => toggle('autoStart', v)}
-          label="Automatikus indítás"
-          hint="A backend indulásakor a Minecraft szerver is elindul."
-        />
+        <Toggle checked={settings.autoStart} onChange={(v) => toggle('autoStart', v)} label="Automatikus indítás" hint="A backend indulásakor a Minecraft szerver is elindul." />
         <Toggle
           checked={settings.eulaAccepted}
           onChange={(v) => toggle('eulaAccepted', v)}
           label="Minecraft EULA elfogadva"
           hint={
-            <a href="https://aka.ms/MinecraftEULA" target="_blank" rel="noreferrer" className="text-accent hover:underline">
+            <a href="https://aka.ms/MinecraftEULA" target="_blank" rel="noreferrer" className="text-signal hover:underline">
               EULA elolvasása
             </a>
           }
@@ -157,7 +156,7 @@ function PanelSettings({ settings, refresh }: { settings: Settings; refresh: () 
           })
         }
       />
-    </Card>
+    </Panel>
   );
 }
 
@@ -168,27 +167,23 @@ function MemorySettings({ instance, overview, refresh }: { instance: InstanceSum
   const max = Math.max(1024, Math.floor((overview.system.totalMemoryMb - 2048) / 512) * 512);
 
   return (
-    <Card>
-      <CardTitle aside={<span className="font-mono text-sm text-accent">{formatMemory(memory)}</span>}>Memória</CardTitle>
-      <input
-        type="range"
-        min={1024}
-        max={max}
-        step={512}
-        value={memory}
-        onChange={(e) => setMemory(Number(e.target.value))}
-        className="w-full accent-[var(--color-accent)]"
-        aria-label="Memória (MB)"
-      />
-      <div className="mt-1 flex justify-between text-xs text-muted">
+    <Panel>
+      <PanelTitle aside={<span className="readout text-lg text-signal">{formatMemory(memory)}</span>}>
+        Memória
+      </PanelTitle>
+      <input type="range" min={1024} max={max} step={512} value={memory} onChange={(e) => setMemory(Number(e.target.value))} className="w-full" aria-label="Memória (MB)" />
+      <div className="label mt-2 flex justify-between gap-3 !text-[11px]">
         <span>1 GB</span>
         <span>
-          Ajánlott modpackhez: {formatMemory(overview.system.recommendedMemoryMb)} · gép: {formatMemory(overview.system.totalMemoryMb)}
+          Ajánlott: {formatMemory(overview.system.recommendedMemoryMb)} · Gép: {formatMemory(overview.system.totalMemoryMb)}
         </span>
       </div>
-      <details className="mt-4">
-        <summary className="cursor-pointer text-sm text-muted hover:text-ink">További JVM argumentumok</summary>
-        <input value={jvmArgs} onChange={(e) => setJvmArgs(e.target.value)} placeholder="-XX:+UseG1GC" className={`${inputClass} mt-2 font-mono`} />
+      <details className="group mt-5">
+        <summary className="label flex cursor-pointer list-none items-center gap-1 hover:text-fg">
+          <ChevronDown className="size-3.5 transition-transform group-open:rotate-180" />
+          További JVM argumentumok
+        </summary>
+        <input value={jvmArgs} onChange={(e) => setJvmArgs(e.target.value)} placeholder="-XX:+UseG1GC" className={`${inputClass} readout mt-3`} />
       </details>
       <SaveRow
         busy={saver.busy}
@@ -198,11 +193,11 @@ function MemorySettings({ instance, overview, refresh }: { instance: InstanceSum
           saver.run(async () => {
             const res = await patch<{ restartRequired: boolean }>(`/api/admin/instances/${instance.id}`, { memoryMb: memory, jvmArgs });
             refresh();
-            if (res.restartRequired) return <span className="text-sm text-warn">Elmentve, újraindítás után lép életbe.</span>;
+            if (res.restartRequired) return restartNote;
           })
         }
       />
-    </Card>
+    </Panel>
   );
 }
 
@@ -234,26 +229,26 @@ function PropertiesEditor({ running }: { running: boolean }) {
     .sort();
 
   if (error) return <Notice tone="danger">{error}</Notice>;
-  if (!original) return <Card className="h-96 animate-pulse" children={null} />;
+  if (!original) return <Skeleton className="h-[640px]" />;
 
   return (
-    <Card>
-      <CardTitle>server.properties</CardTitle>
+    <Panel>
+      <PanelTitle aside={dirty && <span className="label !text-warn">{Object.keys(changes).length} módosítás</span>}>
+        server.properties
+      </PanelTitle>
       {Object.keys(original).length === 0 && (
-        <div className="mb-4">
-          <Notice>A fájl az első indításkor jön létre teljesen; amit itt beállítasz, az már az első indításnál érvényes lesz.</Notice>
+        <div className="mb-5">
+          <Notice>A fájl az első indításkor jön létre teljesen. Amit itt beállítasz, az már az első indításnál érvényes lesz.</Notice>
         </div>
       )}
-      <div className="space-y-6">
+      <div className="space-y-8">
         {FIELDS.map((group) => (
           <fieldset key={group.group}>
-            <legend className="mb-3 text-xs font-semibold tracking-wider text-muted uppercase">{group.group}</legend>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <legend className="label mb-4 !text-fg-muted">{group.group}</legend>
+            <div className="grid gap-x-6 gap-y-5 sm:grid-cols-2">
               {group.items.map((f) =>
                 f.type === 'bool' ? (
-                  <div key={f.key} className="sm:col-span-1">
-                    <Toggle checked={value(f.key) === 'true'} onChange={(v) => set(f.key, String(v))} label={f.label} hint={f.hint} />
-                  </div>
+                  <Toggle key={f.key} checked={value(f.key) === 'true'} onChange={(v) => set(f.key, String(v))} label={f.label} hint={f.hint} />
                 ) : (
                   <div key={f.key} className={f.key === 'motd' ? 'sm:col-span-2' : ''}>
                     <Field label={f.label} hint={f.hint}>
@@ -270,7 +265,7 @@ function PropertiesEditor({ running }: { running: boolean }) {
                           type={f.type}
                           value={value(f.key)}
                           onChange={(e) => set(f.key, e.target.value)}
-                          className={inputClass}
+                          className={`${inputClass} ${f.type === 'number' ? 'readout' : ''}`}
                           maxLength={f.key === 'motd' ? 59 : undefined}
                         />
                       )}
@@ -284,15 +279,15 @@ function PropertiesEditor({ running }: { running: boolean }) {
 
         {advanced.length > 0 && (
           <details className="group">
-            <summary className="flex cursor-pointer list-none items-center gap-1 text-sm text-muted hover:text-ink">
-              <ChevronDown className="size-4 transition-transform group-open:rotate-180" />
-              Haladó ({advanced.length} további beállítás)
+            <summary className="label flex cursor-pointer list-none items-center gap-1 hover:text-fg">
+              <ChevronDown className="size-3.5 transition-transform group-open:rotate-180" />
+              Haladó · {advanced.length} további beállítás
             </summary>
-            <div className="mt-3 divide-y divide-line rounded-xl border border-line">
+            <div className="mt-3 divide-y divide-line border border-line">
               {advanced.map((k) => (
                 <label key={k} className="flex flex-col gap-1 px-3 py-2 sm:flex-row sm:items-center sm:gap-4">
-                  <span className="font-mono text-xs text-muted sm:w-64 sm:shrink-0">{k}</span>
-                  <input value={values[k] ?? ''} onChange={(e) => set(k, e.target.value)} className={`${inputClass} h-8 font-mono text-xs`} />
+                  <span className="readout text-xs text-fg-faint sm:w-64 sm:shrink-0">{k}</span>
+                  <input value={values[k] ?? ''} onChange={(e) => set(k, e.target.value)} className={`${inputClass} readout h-8 text-xs`} />
                 </label>
               ))}
             </div>
@@ -308,10 +303,10 @@ function PropertiesEditor({ running }: { running: boolean }) {
             const res = await put<{ properties: Props; restartRequired: boolean }>('/api/admin/properties', { properties: changes });
             setOriginal(res.properties);
             setValues(res.properties);
-            if (running) return <span className="text-sm text-warn">Elmentve, újraindítás után lép életbe.</span>;
+            if (running) return restartNote;
           })
         }
       />
-    </Card>
+    </Panel>
   );
 }
