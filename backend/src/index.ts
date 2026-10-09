@@ -6,7 +6,7 @@ import { app, VERSION } from './app.ts';
 import { initAuth } from './auth.ts';
 import { config, envFile, MIN_PASSWORD_LENGTH, paths, reloadEnv } from './config.ts';
 import { server } from './server.ts';
-import { getInstance, getSettings } from './store.ts';
+import { getInstance, getSettings, removeIncompleteInstances } from './store.ts';
 
 // First run without a password: generate one and save it to .env, so the panel is never left open.
 if (!config.adminPassword) {
@@ -20,10 +20,20 @@ if (config.adminPassword.length < MIN_PASSWORD_LENGTH) {
   process.exit(1);
 }
 
+// A second copy must stop before touching tmp/ or instances/: it would wipe the running copy's install.
+const alreadyRunning = await fetch(`http://127.0.0.1:${config.port}/api/health`, { signal: AbortSignal.timeout(1500) })
+  .then((r) => r.ok)
+  .catch(() => false);
+if (alreadyRunning) {
+  console.error(`\n  A backend már fut egy másik ablakban (${config.port}-es port). Nem kell újra elindítani.`);
+  process.exit(1);
+}
+
 initAuth();
 await mkdir(paths.instances, { recursive: true });
 await rm(paths.tmp, { recursive: true, force: true }); // leftovers of an interrupted install
 await mkdir(paths.tmp, { recursive: true });
+for (const id of await removeIncompleteInstances()) console.log(`  Félbeszakadt telepítés maradéka törölve: ${id}`);
 
 const httpServer = serve({ fetch: app.fetch, port: config.port, hostname: config.host }, ({ port }) => {
   console.log(`  ✔ A backend fut: http://${config.host}:${port}  (gép: ${config.panelName}, v${VERSION})`);

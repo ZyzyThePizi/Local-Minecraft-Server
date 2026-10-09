@@ -105,6 +105,19 @@ export async function saveInstance(inst: Instance) {
   await writeJson(instanceFile(inst.id), inst);
 }
 
+/** Removes folders of installs that never finished (no instance.json), e.g. when the backend was closed mid-install. */
+export async function removeIncompleteInstances() {
+  if (!existsSync(paths.instances)) return [];
+  const removed: string[] = [];
+  for (const id of await readdir(paths.instances)) {
+    if (!existsSync(instanceFile(id))) {
+      await rm(instanceDir(id), { recursive: true, force: true, maxRetries: 3 });
+      removed.push(id);
+    }
+  }
+  return removed;
+}
+
 export async function deleteInstance(id: string) {
   if (!isValidInstanceId(id)) return;
   await rm(instanceDir(id), { recursive: true, force: true, maxRetries: 3 });

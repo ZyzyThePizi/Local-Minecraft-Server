@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { extractZip } from '../unzip.ts';
-import { download, fetchJson, mapLimit, safeJoin } from '../download.ts';
+import { download, downloadAll, fetchJson, safeJoin } from '../download.ts';
 import type { JobContext } from '../jobs.ts';
 import type { Loader } from '../store.ts';
 import { copyOverrides, sortMcVersions, type InstalledPack, type PackSummary, type PackVersion } from './common.ts';
@@ -109,22 +109,11 @@ export async function install(ctx: JobContext, projectId: string, versionId: str
   if (skipped) ctx.log(`Kihagyva ${skipped} csak kliens oldali fájl.`);
 
   ctx.stage(`Modok letöltése (${files.length} db)`, 0);
-  let finished = 0;
-  await mapLimit(files, 6, async (f) => {
-    const dest = safeJoin(dir, f.path);
-    let lastError: unknown;
-    for (const url of f.downloads) {
-      try {
-        await download(url, dest, { sha1: f.hashes.sha1 });
-        lastError = undefined;
-        break;
-      } catch (err) {
-        lastError = err;
-      }
-    }
-    if (lastError) throw lastError;
-    ctx.progress(++finished / files.length);
-  });
+  await downloadAll(
+    ctx,
+    files.map((f) => ({ urls: f.downloads, dest: safeJoin(dir, f.path), sha1: f.hashes.sha1 })),
+    'Modok letöltése',
+  );
 
   ctx.stage('Konfigurációk másolása');
   await copyOverrides(join(packDir, 'overrides'), dir);

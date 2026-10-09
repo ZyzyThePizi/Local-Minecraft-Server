@@ -17,6 +17,8 @@ export interface Job {
 
 export interface JobContext {
   stage(name: string, progress?: number | null): void;
+  /** Updates the stage text without adding a log line (live counters). */
+  detail(text: string): void;
   progress(value: number | null): void;
   log(line: string): void;
 }
@@ -42,6 +44,9 @@ export function createJob(kind: string, title: string, run: (ctx: JobContext) =>
       job.stage = name;
       job.progress = progress;
       ctx.log(`▸ ${name}`);
+    },
+    detail(text) {
+      job.stage = text;
     },
     progress(value) {
       job.progress = value === null ? null : Math.max(0, Math.min(1, value));

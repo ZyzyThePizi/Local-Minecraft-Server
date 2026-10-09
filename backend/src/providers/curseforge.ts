@@ -3,7 +3,7 @@ import { cp, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { extractZip } from '../unzip.ts';
 import { config, HttpError } from '../config.ts';
-import { download, fetchJson, mapLimit, safeJoin } from '../download.ts';
+import { download, downloadAll, fetchJson, formatBytes, safeJoin, type DownloadItem } from '../download.ts';
 import type { JobContext } from '../jobs.ts';
 import type { Loader } from '../store.ts';
 import { copyOverrides, findPackRoot, sortMcVersions, type InstalledPack, type PackSummary, type PackVersion } from './common.ts';
@@ -244,6 +244,44 @@ async function chunked<T, R>(items: T[], size: number, fn: (chunk: T[]) => Promi
   return out;
 }
 
+/**
+ * The CurseForge CDN is often throttled to well under 1 MB/s. Many of the same files are on Modrinth,
+ * so look them up by SHA-1 and download those from Modrinth's CDN first. The hash check guarantees
+ * the bytes are identical; CurseForge stays as the fallback for every file.
+ */
+async function preferModrinthMirror(ctx: JobContext, plan: DownloadItem[]) {
+  const withHash = plan.filter((p) => p.sha1);
+  if (!withHash.length) return;
+  const mirrors = new Map<string, string>();
+  try {
+    for (let i = 0; i < withHash.length; i += 500) {
+      const hashes = withHash.slice(i, i + 500).map((p) => p.sha1!.toLowerCase());
+      const wanted = new Set(hashes);
+      const res = await fetchJson<Record<string, { files: { url: string; hashes: { sha1?: string } }[] }>>(
+        'https://api.modrinth.com/v2/version_files',
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hashes, algorithm: 'sha1' }) },
+      );
+      for (const version of Object.values(res)) {
+        for (const file of version.files) {
+          const h = file.hashes.sha1?.toLowerCase();
+          if (h && wanted.has(h)) mirrors.set(h, file.url);
+        }
+      }
+    }
+  } catch {
+    ctx.log('A Modrinth tükör nem érhető el, minden fájl a CurseForge-ról jön.');
+    return;
+  }
+  let bytes = 0;
+  for (const p of withHash) {
+    const url = mirrors.get(p.sha1!.toLowerCase());
+    if (!url) continue;
+    p.urls.unshift(url);
+    bytes += p.size ?? 0;
+  }
+  if (mirrors.size) ctx.log(`Gyorsítás: ${mirrors.size} / ${plan.length} fájl (${formatBytes(bytes)}) a gyorsabb Modrinth CDN-ről jön, ugyanazzal a hash-sel.`);
+}
+
 async function installFromManifest(ctx: JobContext, manifest: CfManifest, packDir: string, dir: string, packSlug: string) {
   ctx.stage('Modlista feldolgozása');
   const rules = await loadExcludeRules(ctx, packSlug);
@@ -257,7 +295,7 @@ async function installFromManifest(ctx: JobContext, manifest: CfManifest, packDi
   const modById = new Map(mods.map((m) => [m.id, m]));
   if (files.length < required.length) ctx.log(`Figyelem: ${required.length - files.length} fájl már nem érhető el a CurseForge-on.`);
 
-  const plan: { url: string; dest: string; sha1?: string }[] = [];
+  const plan: DownloadItem[] = [];
   const skipped: string[] = [];
   for (const f of files) {
     const m = modById.get(f.modId);
@@ -270,16 +308,13 @@ async function installFromManifest(ctx: JobContext, manifest: CfManifest, packDi
       continue;
     }
     const folder = classId === CLASS.dataPacks ? 'world/datapacks' : 'mods';
-    plan.push({ url: fileUrl(f), dest: safeJoin(dir, `${folder}/${f.fileName}`), sha1: sha1Of(f) });
+    plan.push({ urls: [fileUrl(f)], dest: safeJoin(dir, `${folder}/${f.fileName}`), sha1: sha1Of(f), size: f.fileLength });
   }
   if (skipped.length) ctx.log(`Kihagyva, mert csak kliens oldali (${skipped.length}): ${skipped.join(', ')}`);
 
+  await preferModrinthMirror(ctx, plan);
   ctx.stage(`Modok letöltése (${plan.length} db)`, 0);
-  let finished = 0;
-  await mapLimit(plan, 6, async (p) => {
-    await download(p.url, p.dest, { sha1: p.sha1 });
-    ctx.progress(++finished / plan.length);
-  });
+  await downloadAll(ctx, plan, 'Modok letöltése');
 
   ctx.stage('Konfigurációk másolása');
   await copyOverrides(join(packDir, manifest.overrides ?? 'overrides'), dir);

@@ -6,6 +6,7 @@ import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { USER_AGENT } from './config.ts';
+import type { JobContext } from './jobs.ts';
 
 export async function fetchJson<T>(url: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(url, {
@@ -75,6 +76,62 @@ async function downloadOnce(url: string, dest: string, opts: DownloadOptions) {
     await rm(part, { force: true });
     throw err;
   }
+}
+
+export interface DownloadItem {
+  /** Tried in order; every source must yield the same bytes (checked by sha1 when known). */
+  urls: string[];
+  dest: string;
+  sha1?: string;
+  size?: number;
+}
+
+/**
+ * Downloads many files in parallel, falling back to the next URL when a source fails,
+ * and keeps the job's stage text updated with "done/total · MB/s".
+ */
+export async function downloadAll(ctx: JobContext, items: DownloadItem[], label: string, concurrency = 8) {
+  const started = Date.now();
+  let done = 0;
+  let bytes = 0;
+  let lastUpdate = 0;
+  const report = (force = false) => {
+    const now = Date.now();
+    if (!force && now - lastUpdate < 500) return;
+    lastUpdate = now;
+    const secs = Math.max(0.5, (now - started) / 1000);
+    ctx.detail(`${label} (${done}/${items.length} · ${(bytes / 1048576 / secs).toFixed(1)} MB/s)`);
+    ctx.progress(done / Math.max(1, items.length));
+  };
+  report(true);
+  await mapLimit(items, concurrency, async (item) => {
+    let lastError: unknown;
+    let received = 0;
+    for (const url of item.urls) {
+      try {
+        received = 0;
+        await download(url, item.dest, {
+          sha1: item.sha1,
+          retries: url === item.urls.at(-1) ? 3 : 1,
+          onProgress: (r) => {
+            bytes += r - received;
+            received = r;
+            report();
+          },
+        });
+        lastError = undefined;
+        break;
+      } catch (err) {
+        bytes -= received;
+        lastError = err;
+      }
+    }
+    if (lastError) throw lastError;
+    done++;
+    report();
+  });
+  report(true);
+  ctx.log(`  ${items.length} fájl, ${formatBytes(bytes)}, ${Math.round((Date.now() - started) / 1000)} mp alatt`);
 }
 
 /** Runs `fn` over `items` with at most `limit` in flight. */
