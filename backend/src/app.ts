@@ -3,7 +3,7 @@ import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { checkPassword, issueToken, loginRetryAfter, recordLoginFailure, recordLoginSuccess, verifyToken } from './auth.ts';
-import { config, HttpError } from './config.ts';
+import { config, HttpError, reloadEnv } from './config.ts';
 import { recommendedMemory, startInstall, totalMemoryMb, type InstallRequest } from './install.ts';
 import { getJob, latestJob } from './jobs.ts';
 import { readProperties, writeProperties } from './properties.ts';
@@ -112,7 +112,8 @@ app.post('/api/auth/login', async (c) => {
   const wait = loginRetryAfter(ip);
   if (wait) throw new HttpError(429, 'TOO_MANY_ATTEMPTS', `Túl sok sikertelen próbálkozás. Próbáld újra ${Math.ceil(wait / 60)} perc múlva.`);
   const { password } = await body<{ password?: unknown }>(c);
-  if (typeof password !== 'string' || !checkPassword(password)) {
+  reloadEnv(); // a password just edited in .env works right away
+  if (typeof password !== 'string' || !checkPassword(password.trim())) {
     recordLoginFailure(ip);
     throw new HttpError(401, 'BAD_PASSWORD', 'Hibás jelszó.');
   }

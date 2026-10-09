@@ -1,7 +1,8 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseEnv } from 'node:util';
 
 export const backendDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const envFile = resolve(backendDir, '.env');
@@ -22,6 +23,37 @@ export const config = {
     .map((s) => s.trim().replace(/\/$/, ''))
     .filter(Boolean),
 };
+
+export const MIN_PASSWORD_LENGTH = 10;
+
+/**
+ * Re-reads the secrets from .env so a changed password or CurseForge key takes effect without a restart.
+ * Returns the names of the settings that changed.
+ */
+export function reloadEnv() {
+  const changed: string[] = [];
+  let vars: Record<string, string | undefined>;
+  try {
+    vars = parseEnv(readFileSync(envFile, 'utf8'));
+  } catch {
+    return changed;
+  }
+  const password = vars.ADMIN_PASSWORD?.trim() ?? '';
+  if (password && password !== config.adminPassword) {
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      console.warn(`Az új ADMIN_PASSWORD túl rövid (min. ${MIN_PASSWORD_LENGTH} karakter), a régi marad érvényben.`);
+    } else {
+      config.adminPassword = password;
+      changed.push('ADMIN_PASSWORD');
+    }
+  }
+  const cfKey = vars.CURSEFORGE_API_KEY?.trim() ?? '';
+  if (cfKey !== config.curseforgeApiKey) {
+    config.curseforgeApiKey = cfKey;
+    changed.push('CURSEFORGE_API_KEY');
+  }
+  return changed;
+}
 
 export const paths = {
   instances: resolve(config.dataDir, 'instances'),
