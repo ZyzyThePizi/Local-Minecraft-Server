@@ -1,7 +1,8 @@
+import { onChange } from './changes.ts';
 import { API_VERSION, VERSION } from './config.ts';
 import { nodeId, publicKey, signBytes } from './node.ts';
 import { servers } from './servers.ts';
-import { listInstances, settings } from './store.ts';
+import { DEFAULT_REGISTRY_URL, listInstances, settings } from './store.ts';
 
 /**
  * Opt-in heartbeat to the network registry (the private control panel reads it).
@@ -28,7 +29,13 @@ export interface RegistryState {
 export const registryState: RegistryState = { lastOkAt: null, lastError: null, announcements: [], minVersion: null, flags: {} };
 
 const INTERVAL_MS = 5 * 60 * 1000;
+/** After a visible change (server started, player joined…) the next beat goes out this soon, batching bursts. */
+const CHANGE_DELAY_MS = 2000;
 let timer: NodeJS.Timeout | null = null;
+let soon: NodeJS.Timeout | null = null;
+
+/** The address beats go to: the one set on the panel, or the network's default. */
+export const registryUrl = () => settings().registry.url || DEFAULT_REGISTRY_URL;
 const seen = new Set<string>();
 
 const newer = (a: string, b: string) => {
@@ -39,8 +46,8 @@ const newer = (a: string, b: string) => {
 };
 
 export async function heartbeat() {
-  const { enabled, url } = settings().registry;
-  if (!enabled || !url) return;
+  const url = registryUrl();
+  if (!settings().registry.enabled || !url) return;
   const instances = await listInstances();
   const active = servers.active();
   const body = JSON.stringify({
@@ -80,6 +87,16 @@ export async function heartbeat() {
     registryState.lastError = (err as Error).message;
   }
 }
+
+// Report visible changes within seconds instead of waiting for the next five-minute beat.
+onChange(() => {
+  if (soon || !timer) return;
+  soon = setTimeout(() => {
+    soon = null;
+    void heartbeat();
+  }, CHANGE_DELAY_MS);
+  soon.unref();
+});
 
 /** (Re)starts the heartbeat loop; call after the registry setting changes. */
 export function startRegistry() {

@@ -69,7 +69,7 @@ export function builtInUrls(): string[] {
   return list;
 }
 
-const POLL_MS = 30_000;
+const POLL_MS = 10_000;
 const emptyLive = (): NodeLive => ({ reach: 'checking', message: null, verified: false, publicStatus: false, servers: null, checkedAt: 0 });
 const isSignedIn = (rec: NodeRecord) => Boolean(rec.auth && rec.auth.refreshExpiresAt > Date.now());
 
@@ -205,9 +205,13 @@ export function HubProvider({ children }: { children: ReactNode }) {
     };
     run();
     const t = setInterval(() => alive && run(), POLL_MS);
+    // Coming back to the tab shows the current state right away instead of the last one seen.
+    const onVisible = () => document.visibilityState === 'visible' && run();
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       alive = false;
       clearInterval(t);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [ready, records, check]);
 

@@ -216,12 +216,13 @@ function NetworkPanel({ overview, refresh }: { overview: NodeOverview; refresh: 
     <Panel>
       <PanelTitle aside={reg.enabled && <Chip tone={r.lastError ? 'warn' : 'signal'}>{r.lastError ? 'Hiba' : r.lastOkAt ? 'Kapcsolódva' : 'Indul'}</Chip>}>Hálózat</PanelTitle>
       <p className="text-sm text-fg-muted">
-        Opcionális: a gép ötpercenként aláírt jelet küld a hálózat nyilvántartásának, és onnan kapja a bejelentéseket és a frissítési figyelmeztetéseket. Csak a gép azonosítója, neve,
+        Opcionális: a gép ötpercenként, változáskor (szerver indul vagy leáll, játékos lép be) pedig pár másodpercen belül aláírt jelet küld a hálózat nyilvántartásának, és onnan kapja a
+        bejelentéseket és a frissítési figyelmeztetéseket. Csak a gép azonosítója, neve,
         verziója és a szerverek, játékosok száma megy át. Jelszó, cím vagy játékosnév soha.
       </p>
       <div className="mt-4 space-y-4">
-        <Field label="Nyilvántartás címe">
-          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" className={`${inputClass} font-mono`} spellCheck={false} />
+        <Field label="Nyilvántartás címe" hint={r.defaultUrl ? 'Üresen hagyva a hálózat alapértelmezett nyilvántartását használja.' : undefined}>
+          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={r.defaultUrl || 'https://…'} className={`${inputClass} font-mono`} spellCheck={false} />
         </Field>
         <Toggle checked={reg.enabled} onChange={(v) => save(v)} label="Részvétel a hálózatban" />
         {reg.enabled && r.lastError && <Notice tone="warn">Utolsó hiba: {r.lastError}</Notice>}

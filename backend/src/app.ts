@@ -32,7 +32,7 @@ import {
   viaLabel,
   type Session,
 } from './sessions.ts';
-import { deleteInstance, getInstance, isValidInstanceId, listInstances, readJson, saveInstance, serverDir, settings, updateSettings, type Instance, type Settings } from './store.ts';
+import { DEFAULT_REGISTRY_URL, deleteInstance, getInstance, isValidInstanceId, listInstances, readJson, saveInstance, serverDir, settings, updateSettings, type Instance, type Settings } from './store.ts';
 
 /** Filled in by index.ts once the server listens. */
 export const runtime = { publicUrl: null as string | null, funnelNote: null as string | null };
@@ -223,7 +223,7 @@ app.get('/api/v1/node', async (c) => {
     ram: { budgetMb: ramBudgetMb(), reservedMb: servers.reservedMb() },
     curseforgeConfigured: Boolean(config.curseforgeApiKey),
     installing: runningJob('install') !== null,
-    registry: registryState,
+    registry: { ...registryState, defaultUrl: DEFAULT_REGISTRY_URL },
     session: { id: s.id, via: s.via, device: s.device },
   });
 });
@@ -275,7 +275,7 @@ app.patch('/api/v1/node', async (c) => {
     const url = str(r?.url, 200).replace(/\/$/, '');
     const okUrl = /^https:\/\/\S+$/.test(url) || /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/\S*)?$/.test(url);
     if (typeof r?.enabled !== 'boolean' || (url && !okUrl)) throw bad('Hibás hálózati beállítás (https:// cím kell).');
-    if (r.enabled && !url) throw bad('A hálózat címe hiányzik.');
+    // An empty address means the network's default registry.
     patch.registry = { enabled: r.enabled, url };
     changed.push(`hálózat: ${r.enabled ? 'be' : 'ki'}`);
   }

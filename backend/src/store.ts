@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { hostname } from 'node:os';
+import { changed } from './changes.ts';
 import { config, legacyEnv, paths } from './config.ts';
 
 export type Loader = 'vanilla' | 'forge' | 'neoforge' | 'fabric' | 'quilt';
@@ -53,7 +54,8 @@ export interface Settings {
 }
 
 export const DEFAULT_ORIGINS = ['https://zyzythepizi.github.io', 'http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:4173'];
-export const DEFAULT_REGISTRY_URL = '';
+/** The network registry a machine reports to when it opts in and no other address is set. */
+export const DEFAULT_REGISTRY_URL = 'https://18749.tail9baec1.ts.net:10000/registry';
 
 export async function readJson<T>(file: string, fallback: T): Promise<T> {
   try {
@@ -132,6 +134,7 @@ export async function updateSettings(patch: Partial<Settings>) {
   const next = { ...settings(), ...patch };
   await saveSettings(next);
   cached = next;
+  changed();
   return next;
 }
 
@@ -169,6 +172,7 @@ export async function getInstance(id: string | null | undefined) {
 export async function saveInstance(inst: Instance) {
   await mkdir(instanceDir(inst.id), { recursive: true });
   await writeJson(instanceFile(inst.id), inst);
+  changed();
 }
 
 /** Removes folders of installs that never finished (no instance.json), e.g. when the backend was closed mid-install. */
@@ -187,4 +191,5 @@ export async function removeIncompleteInstances() {
 export async function deleteInstance(id: string) {
   if (!isValidInstanceId(id)) return;
   await rm(instanceDir(id), { recursive: true, force: true, maxRetries: 3 });
+  changed();
 }

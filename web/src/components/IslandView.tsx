@@ -1,5 +1,5 @@
 import { ArrowDown, ShieldAlert } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { groupFingerprint } from '../hub/crypto';
 import { NodeProvider, useHub, type HubNode, type HubServer } from '../hub/HubProvider';
 import { usePoll } from '../hooks';
@@ -86,10 +86,15 @@ export function IslandView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serversKey, selectedId, installing]);
 
+  // A save must show up everywhere at once: in this view and in the hub (island name, server list, 3D world).
+  const hub = useHub();
+  const refreshHub = useRef(() => {});
+  refreshHub.current = () => void hub.refreshNode(node.rec.nodeId);
   const refreshAll = useMemo(
     () => () => {
       overview.refresh();
       owned.refresh();
+      refreshHub.current();
     },
     [overview.refresh, owned.refresh],
   );

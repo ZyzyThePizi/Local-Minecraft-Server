@@ -79,7 +79,7 @@ export interface NodeOverview {
   ram: { budgetMb: number; reservedMb: number };
   curseforgeConfigured: boolean;
   installing: boolean;
-  registry: { lastOkAt: number | null; lastError: string | null; announcements: Announcement[]; minVersion: string | null };
+  registry: { lastOkAt: number | null; lastError: string | null; announcements: Announcement[]; minVersion: string | null; defaultUrl?: string };
   session: { id: string; via: Via; device: string };
 }
 

@@ -3,6 +3,7 @@ import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { totalmem } from 'node:os';
+import { changed } from './changes.ts';
 import { HttpError } from './config.ts';
 import { ensureJava } from './java.ts';
 import { findFreePort, isPortFree } from './ports.ts';
@@ -28,7 +29,7 @@ export function ramBudgetMb() {
 /** One Minecraft server process. Every installed server has its own, so several can run at once. */
 class ServerProcess {
   readonly instanceId: string;
-  state: ServerState = 'stopped';
+  #state: ServerState = 'stopped';
   startedAt: number | null = null;
   /** Memory (-Xmx) and game port of the current run. */
   memoryMb = 0;
@@ -42,6 +43,16 @@ class ServerProcess {
 
   constructor(instanceId: string) {
     this.instanceId = instanceId;
+  }
+
+  get state() {
+    return this.#state;
+  }
+
+  set state(next: ServerState) {
+    if (next === this.#state) return;
+    this.#state = next;
+    changed();
   }
 
   isActive() {
@@ -59,6 +70,7 @@ class ServerProcess {
     if (joined) this.players.add(joined[1]!);
     const left = LEFT.exec(line);
     if (left) this.players.delete(left[1]!);
+    if (joined || left) changed();
   }
 
   panel(message: string) {
