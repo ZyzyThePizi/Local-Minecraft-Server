@@ -1,6 +1,7 @@
 import { ArrowUpRight, Download, KeyRound, Search } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { ApiError, get, post } from '../api';
+import { ApiError } from '../api';
+import { useApi } from '../hub/HubProvider';
 import { compactNumber, formatDate } from '../format';
 import { useDebounced } from '../hooks';
 import type { Job, PackSummary, PackVersion, Source } from '../types';
@@ -16,7 +17,8 @@ export function PacksTab({
 }: {
   curseforgeConfigured: boolean;
   onInstalled: () => void;
-  onStartServer: () => void;
+  /** Opens the freshly installed server on the control tab. */
+  onStartServer: (serverId: string) => void;
 }) {
   const [source, setSource] = useState<Source>(curseforgeConfigured ? 'curseforge' : 'modrinth');
   const [query, setQuery] = useState('');
@@ -27,20 +29,22 @@ export function PacksTab({
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<PackSummary | null>(null);
   const [job, setJob] = useState<Job | null>(null);
+  const api = useApi();
 
   // Pick up an install that is still running (e.g. after a page reload).
   useEffect(() => {
-    get<{ job: Job | null }>('/api/admin/jobs/latest/install')
+    api
+      .get<{ job: Job | null }>('/api/v1/jobs/latest/install')
       .then(({ job: j }) => j?.state === 'running' && setJob(j))
       .catch(() => {});
-  }, []);
+  }, [api]);
 
   useEffect(() => {
     if (source === 'vanilla') return;
     let alive = true;
     setLoading(true);
     setError(null);
-    get<{ results: PackSummary[]; via: 'official' | 'mirror' | 'direct' }>(`/api/admin/packs/search?source=${source}&q=${encodeURIComponent(q)}`)
+    api.get<{ results: PackSummary[]; via: 'official' | 'mirror' | 'direct' }>(`/api/v1/packs/search?source=${source}&q=${encodeURIComponent(q)}`)
       .then((r) => {
         if (!alive) return;
         setResults(r.results);
@@ -55,10 +59,10 @@ export function PacksTab({
     return () => {
       alive = false;
     };
-  }, [source, q]);
+  }, [api, source, q]);
 
   const install = async (pack: { source: Source; projectId?: string; versionId: string; name: string }) => {
-    const res = await post<{ job: Job }>('/api/admin/packs/install', pack);
+    const res = await api.post<{ job: Job }>('/api/v1/packs/install', pack);
     setSelected(null);
     setJob(res.job);
     onInstalled();
@@ -74,7 +78,7 @@ export function PacksTab({
   const installing = job?.state === 'running';
   return (
     <div className="space-y-6">
-      {job && <JobProgress key={job.id} initial={job} onFinished={onFinished} onStart={onStartServer} onDismiss={() => setJob(null)} />}
+      {job && <JobProgress key={job.id} initial={job} onFinished={onFinished} onStart={(id) => onStartServer(id)} onDismiss={() => setJob(null)} />}
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
         <Tabs
@@ -172,6 +176,7 @@ function VersionPicker({
   onInstall: (p: { source: Source; projectId: string; versionId: string; name: string }) => Promise<void>;
   disabled: boolean;
 }) {
+  const api = useApi();
   const [versions, setVersions] = useState<PackVersion[] | null>(null);
   const [versionId, setVersionId] = useState('');
   const [showAll, setShowAll] = useState(false);
@@ -183,13 +188,13 @@ function VersionPicker({
     setVersions(null);
     setError(null);
     setShowAll(false);
-    get<{ versions: PackVersion[] }>(`/api/admin/packs/versions?source=${pack.source}&id=${encodeURIComponent(pack.id)}`)
+    api.get<{ versions: PackVersion[] }>(`/api/v1/packs/versions?source=${pack.source}&id=${encodeURIComponent(pack.id)}`)
       .then(({ versions: v }) => {
         setVersions(v);
         setVersionId((v.find((x) => x.type === 'release') ?? v[0])?.id ?? '');
       })
       .catch((err: ApiError) => setError(err.message));
-  }, [pack]);
+  }, [api, pack]);
 
   const visible = versions?.filter((v) => showAll || v.type === 'release' || v.id === versionId) ?? [];
   const current = versions?.find((v) => v.id === versionId);
@@ -283,19 +288,20 @@ function VersionPicker({
 }
 
 function VanillaPicker({ onInstall, disabled }: { onInstall: (version: string) => Promise<void>; disabled: boolean }) {
+  const api = useApi();
   const [versions, setVersions] = useState<PackVersion[] | null>(null);
   const [version, setVersion] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    get<{ versions: PackVersion[] }>('/api/admin/packs/versions?source=vanilla')
+    api.get<{ versions: PackVersion[] }>('/api/v1/packs/versions?source=vanilla')
       .then(({ versions: v }) => {
         setVersions(v);
         setVersion(v[0]?.id ?? '');
       })
       .catch((err: ApiError) => setError(err.message));
-  }, []);
+  }, [api]);
 
   const go = async () => {
     setBusy(true);

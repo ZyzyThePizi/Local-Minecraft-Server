@@ -1,20 +1,21 @@
 import { Package, Play, RotateCw, Skull, Square } from 'lucide-react';
 import { useState } from 'react';
-import { ApiError, post } from '../api';
+import { ApiError } from '../api';
+import { useApi } from '../hub/HubProvider';
 import { formatMemory, LOADER_LABEL, uptime } from '../format';
-import type { Overview } from '../types';
+import type { ServerSummary } from '../types';
 import { Console } from './Console';
 import { PlayersPanel } from './PlayersPanel';
 import { QuickCommands } from './QuickCommands';
 import { Button, Notice, PackIcon, Panel, PanelTitle, StateLabel } from './ui';
 
 export function ControlTab({
-  overview,
+  server,
   refresh,
   onNeedEula,
   goToPacks,
 }: {
-  overview: Overview;
+  server: ServerSummary | null;
   refresh: () => void;
   onNeedEula: (retry: () => Promise<void>) => void;
   goToPacks: () => void;
@@ -23,15 +24,15 @@ export function ControlTab({
   const [error, setError] = useState<string | null>(null);
   // The player the quick commands act on; clicking a name in the players list fills it.
   const [target, setTarget] = useState('');
-  const { server, instance } = overview;
-  const state = server.state;
+  const api = useApi();
 
   const act = async (action: 'start' | 'stop' | 'restart' | 'kill') => {
     setBusy(action);
     setError(null);
     const run = async () => {
-      if (action === 'kill') await post('/api/admin/server/stop', { force: true });
-      else await post(`/api/admin/server/${action}`);
+      if (!server) return;
+      if (action === 'kill') await api.post(`/api/v1/servers/${server.id}/stop`, { force: true });
+      else await api.post(`/api/v1/servers/${server.id}/${action}`);
       refresh();
     };
     try {
@@ -44,7 +45,7 @@ export function ControlTab({
     }
   };
 
-  if (!instance) {
+  if (!server) {
     return (
       <Panel className="mx-auto max-w-xl py-12 text-center">
         <Package className="mx-auto mb-4 size-9 text-fg-faint" aria-hidden />
@@ -57,6 +58,8 @@ export function ControlTab({
     );
   }
 
+  const instance = server;
+  const state = server.state;
   const canStart = state === 'stopped' || state === 'crashed';
   return (
     <div className="grid gap-5 lg:grid-cols-12">
@@ -75,10 +78,14 @@ export function ControlTab({
             </div>
           </div>
 
-          <dl className="mt-5 grid grid-cols-2 border border-line">
+          <dl className="mt-5 grid grid-cols-3 border border-line">
             <div className="border-r border-line px-4 py-3">
               <dt className="label">Memória</dt>
               <dd className="readout mt-1">{formatMemory(instance.memoryMb)}</dd>
+            </div>
+            <div className="border-r border-line px-4 py-3">
+              <dt className="label">Port</dt>
+              <dd className="readout mt-1">{instance.port}</dd>
             </div>
             <div className="px-4 py-3">
               <dt className="label">Üzemidő</dt>
@@ -115,7 +122,7 @@ export function ControlTab({
           {state === 'starting' && instance.loader !== 'vanilla' && <p className="mt-4 text-sm text-fg-faint">Modpackeknél az első indítás akár több percig is tarthat.</p>}
         </Panel>
 
-        <PlayersPanel state={state} target={target} onTarget={setTarget} />
+        <PlayersPanel key={server.id} serverId={server.id} state={state} target={target} onTarget={setTarget} />
       </div>
 
       <div className="space-y-5 lg:col-span-8">
@@ -126,9 +133,9 @@ export function ControlTab({
             </h2>
             <span className="label hidden sm:inline">↑ ↓ parancselőzmények</span>
           </div>
-          <Console canSend={state === 'running' || state === 'starting'} />
+          <Console key={server.id} serverId={server.id} canSend={state === 'running' || state === 'starting'} />
         </Panel>
-        <QuickCommands canSend={state === 'running'} target={target} onTarget={setTarget} players={server.players} />
+        <QuickCommands serverId={server.id} canSend={state === 'running'} target={target} onTarget={setTarget} players={server.players} />
       </div>
     </div>
   );

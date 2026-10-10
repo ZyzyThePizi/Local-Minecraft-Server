@@ -1,6 +1,6 @@
 import { ChevronDown, Play } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { get } from '../api';
+import { useApi } from '../hub/HubProvider';
 import type { Job } from '../types';
 import { Button } from './ui';
 
@@ -12,9 +12,10 @@ export function JobProgress({
 }: {
   initial: Job;
   onFinished: (job: Job) => void;
-  onStart: () => void;
+  onStart: (serverId: string) => void;
   onDismiss: () => void;
 }) {
+  const api = useApi();
   const [job, setJob] = useState(initial);
   const [showLog, setShowLog] = useState(false);
 
@@ -22,7 +23,7 @@ export function JobProgress({
     if (job.state !== 'running') return;
     const t = setTimeout(async () => {
       try {
-        const { job: next } = await get<{ job: Job }>(`/api/admin/jobs/${job.id}`);
+        const { job: next } = await api.get<{ job: Job }>(`/api/v1/jobs/${job.id}`);
         setJob(next);
         if (next.state !== 'running') onFinished(next);
       } catch {
@@ -30,7 +31,7 @@ export function JobProgress({
       }
     }, 1000);
     return () => clearTimeout(t);
-  }, [job, onFinished]);
+  }, [api, job, onFinished]);
 
   const pct = job.progress === null ? null : Math.round(job.progress * 100);
   const tone = job.state === 'error' ? 'border-danger/50' : job.state === 'done' ? 'border-signal/50 brackets-signal' : 'border-line';
@@ -63,12 +64,10 @@ export function JobProgress({
 
         {job.state === 'done' && (
           <div className="mt-5 flex flex-wrap items-center gap-2">
-            {job.result?.activated ? (
-              <Button variant="primary" onClick={onStart} icon={<Play className="size-4" />}>
-                Szerver indítása
+            {job.result?.instanceId && (
+              <Button variant="primary" onClick={() => onStart(job.result!.instanceId)} icon={<Play className="size-4" />}>
+                Megnyitás
               </Button>
-            ) : (
-              <p className="text-sm text-fg-muted">Egy másik szerver fut, ezért ezt a Szerverek fülön tudod aktiválni.</p>
             )}
             <Button variant="ghost" onClick={onDismiss}>
               Bezárás

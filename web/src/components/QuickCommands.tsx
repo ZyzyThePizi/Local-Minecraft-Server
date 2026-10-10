@@ -1,6 +1,7 @@
 import { Send } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
-import { ApiError, post } from '../api';
+import { ApiError } from '../api';
+import { useApi } from '../hub/HubProvider';
 import { inputClass, Notice, Panel, PanelTitle } from './ui';
 
 interface QuickCommand {
@@ -49,7 +50,20 @@ const DIFFICULTY: QuickCommand[] = [
 const PLAYER_NAME = /^[A-Za-z0-9_]{3,16}$/;
 
 /** One-click versions of the console commands an admin needs most; the output shows up in the console. */
-export function QuickCommands({ canSend, target, onTarget, players }: { canSend: boolean; target: string; onTarget: (v: string) => void; players: string[] }) {
+export function QuickCommands({
+  serverId,
+  canSend,
+  target,
+  onTarget,
+  players,
+}: {
+  serverId: string;
+  canSend: boolean;
+  target: string;
+  onTarget: (v: string) => void;
+  players: string[];
+}) {
+  const api = useApi();
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [result, setResult] = useState<{ tone: 'signal' | 'danger'; text: string } | null>(null);
@@ -59,7 +73,7 @@ export function QuickCommands({ canSend, target, onTarget, players }: { canSend:
     setBusy(command);
     setResult(null);
     try {
-      await post('/api/admin/server/command', { command });
+      await api.post(`/api/v1/servers/${serverId}/command`, { command });
       setResult({ tone: 'signal', text: `Elküldve: ${command}. A választ a konzolban látod.` });
     } catch (err) {
       setResult({ tone: 'danger', text: err instanceof ApiError ? err.message : 'Nem sikerült elküldeni.' });

@@ -34,3 +34,17 @@ export function uptime(since: number) {
   const m = Math.floor((s % 3600) / 60);
   return h ? `${h} óra ${m} perc` : m ? `${m} perc` : `${s} mp`;
 }
+
+export function formatDateTime(ms: number) {
+  return new Intl.DateTimeFormat('hu-HU', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(ms));
+}
+
+export function relativeTime(ms: number) {
+  const diff = ms - Date.now();
+  const abs = Math.abs(diff);
+  const rtf = new Intl.RelativeTimeFormat('hu-HU', { numeric: 'auto' });
+  if (abs < 60_000) return rtf.format(Math.round(diff / 1000), 'second');
+  if (abs < 3600_000) return rtf.format(Math.round(diff / 60_000), 'minute');
+  if (abs < 86400_000) return rtf.format(Math.round(diff / 3600_000), 'hour');
+  return rtf.format(Math.round(diff / 86400_000), 'day');
+}

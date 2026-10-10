@@ -1,6 +1,7 @@
 import { SendHorizontal } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
-import { ApiError, get, post } from '../api';
+import { ApiError } from '../api';
+import { useApi } from '../hub/HubProvider';
 import { Button } from './ui';
 
 interface Line {
@@ -18,7 +19,8 @@ function lineClass(line: string) {
   return 'text-fg-muted';
 }
 
-export function Console({ canSend }: { canSend: boolean }) {
+export function Console({ serverId, canSend }: { serverId: string; canSend: boolean }) {
+  const api = useApi();
   const [lines, setLines] = useState<Line[]>([]);
   const [command, setCommand] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +36,7 @@ export function Console({ canSend }: { canSend: boolean }) {
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
       try {
-        const res = await get<{ lines: Line[]; last: number }>(`/api/admin/server/logs?since=${lastSeq.current}`);
+        const res = await api.get<{ lines: Line[]; last: number }>(`/api/v1/servers/${serverId}/logs?since=${lastSeq.current}`);
         if (!alive) return;
         // The backend restarted: its counter starts over, so reload from scratch.
         if (res.last < lastSeq.current) {
@@ -54,7 +56,7 @@ export function Console({ canSend }: { canSend: boolean }) {
       alive = false;
       clearTimeout(timer);
     };
-  }, []);
+  }, [api, serverId]);
 
   useEffect(() => {
     const el = box.current;
@@ -73,7 +75,7 @@ export function Console({ canSend }: { canSend: boolean }) {
     setSending(true);
     setError(null);
     try {
-      await post('/api/admin/server/command', { command: cmd });
+      await api.post(`/api/v1/servers/${serverId}/command`, { command: cmd });
       history.current = [cmd, ...history.current.filter((h) => h !== cmd)].slice(0, 50);
       historyIndex.current = -1;
       setCommand('');

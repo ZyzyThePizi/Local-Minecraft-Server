@@ -1,8 +1,9 @@
 import { ChevronDown, Save } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ApiError, get, patch, put } from '../api';
+import { ApiError } from '../api';
+import { useApi } from '../hub/HubProvider';
 import { formatMemory } from '../format';
-import type { InstanceSummary, Overview, Settings } from '../types';
+import type { NodeOverview, ServerSummary } from '../types';
 import { Button, Field, inputClass, Notice, Panel, PanelTitle, Skeleton, Toggle } from './ui';
 
 type Props = Record<string, string>;
@@ -67,21 +68,24 @@ const DEFAULTS: Props = {
   'online-mode': 'true',
 };
 
-export function SettingsTab({ overview, refresh }: { overview: Overview; refresh: () => void }) {
+/** Settings of the selected server: join address, autostart, memory and server.properties. */
+export function SettingsTab({ server, overview, refresh }: { server: ServerSummary | null; overview: NodeOverview; refresh: () => void }) {
+  if (!server) {
+    return (
+      <Panel>
+        <p className="text-sm text-fg-muted">A beállítások egy szerver telepítése után szerkeszthetők.</p>
+      </Panel>
+    );
+  }
+  const running = server.state !== 'stopped' && server.state !== 'crashed';
   return (
     <div className="grid gap-5 lg:grid-cols-12">
       <div className="space-y-5 lg:col-span-5">
-        <PanelSettings settings={overview.settings} refresh={refresh} />
-        {overview.instance && <MemorySettings key={overview.instance.id} instance={overview.instance} overview={overview} refresh={refresh} />}
+        <ServerSettings key={`s-${server.id}`} server={server} refresh={refresh} />
+        <MemorySettings key={`m-${server.id}`} server={server} overview={overview} refresh={refresh} />
       </div>
       <div className="lg:col-span-7">
-        {overview.instance ? (
-          <PropertiesEditor key={overview.instance.id} running={overview.server.state !== 'stopped' && overview.server.state !== 'crashed'} />
-        ) : (
-          <Panel>
-            <p className="text-sm text-fg-muted">A server.properties egy szerver telepítése után szerkeszthető.</p>
-          </Panel>
-        )}
+        <PropertiesEditor key={server.id} serverId={server.id} running={running} />
       </div>
     </div>
   );
@@ -117,50 +121,39 @@ function useSaver() {
 
 const restartNote = <span className="text-sm text-warn">Elmentve, újraindítás után lép életbe.</span>;
 
-function PanelSettings({ settings, refresh }: { settings: Settings; refresh: () => void }) {
-  const [address, setAddress] = useState(settings.gameAddress);
+function ServerSettings({ server, refresh }: { server: ServerSummary; refresh: () => void }) {
+  const api = useApi();
+  const [address, setAddress] = useState(server.gameAddress);
   const saver = useSaver();
-  const toggle = (key: 'autoStart' | 'eulaAccepted', value: boolean) =>
+  const save = (body: Record<string, unknown>) =>
     saver.run(async () => {
-      await put('/api/admin/settings', { [key]: value });
+      await api.patch(`/api/v1/servers/${server.id}`, body);
       refresh();
     });
 
   return (
     <Panel>
-      <PanelTitle>Panel</PanelTitle>
+      <PanelTitle aside={<span className="readout text-sm text-fg-muted">port {server.port}</span>}>Szerver</PanelTitle>
       <div className="space-y-5">
-        <Field label="Csatlakozási cím a játékosoknak" hint="Pl. a playit.gg-től kapott cím. Ez jelenik meg a nyilvános oldalon.">
+        <Field
+          label="Csatlakozási cím a játékosoknak"
+          hint={
+            <>
+              Ennek a szervernek a playit.gg tunnelje. A playit.gg-n a tunnel helyi címe: <span className="readout text-fg-muted">127.0.0.1:{server.port}</span>
+            </>
+          }
+        >
           <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="valami.joinmc.link" className={`${inputClass} readout`} />
         </Field>
-        <Toggle checked={settings.autoStart} onChange={(v) => toggle('autoStart', v)} label="Automatikus indítás" hint="A backend indulásakor a Minecraft szerver is elindul." />
-        <Toggle
-          checked={settings.eulaAccepted}
-          onChange={(v) => toggle('eulaAccepted', v)}
-          label="Minecraft EULA elfogadva"
-          hint={
-            <a href="https://aka.ms/MinecraftEULA" target="_blank" rel="noreferrer" className="text-signal hover:underline">
-              EULA elolvasása
-            </a>
-          }
-        />
+        <Toggle checked={server.autoStart} onChange={(v) => save({ autoStart: v })} label="Automatikus indítás" hint="A backend indulásakor ez a szerver is elindul." />
       </div>
-      <SaveRow
-        busy={saver.busy}
-        dirty={address.trim() !== settings.gameAddress}
-        message={saver.message}
-        onSave={() =>
-          saver.run(async () => {
-            await put('/api/admin/settings', { gameAddress: address });
-            refresh();
-          })
-        }
-      />
+      <SaveRow busy={saver.busy} dirty={address.trim() !== server.gameAddress} message={saver.message} onSave={() => save({ gameAddress: address })} />
     </Panel>
   );
 }
 
-function MemorySettings({ instance, overview, refresh }: { instance: InstanceSummary; overview: Overview; refresh: () => void }) {
+function MemorySettings({ server: instance, overview, refresh }: { server: ServerSummary; overview: NodeOverview; refresh: () => void }) {
+  const api = useApi();
   const [memory, setMemory] = useState(instance.memoryMb);
   const [jvmArgs, setJvmArgs] = useState(instance.jvmArgs);
   const saver = useSaver();
@@ -191,7 +184,7 @@ function MemorySettings({ instance, overview, refresh }: { instance: InstanceSum
         message={saver.message}
         onSave={() =>
           saver.run(async () => {
-            const res = await patch<{ restartRequired: boolean }>(`/api/admin/instances/${instance.id}`, { memoryMb: memory, jvmArgs });
+            const res = await api.patch<{ restartRequired: boolean }>(`/api/v1/servers/${instance.id}`, { memoryMb: memory, jvmArgs });
             refresh();
             if (res.restartRequired) return restartNote;
           })
@@ -201,20 +194,22 @@ function MemorySettings({ instance, overview, refresh }: { instance: InstanceSum
   );
 }
 
-function PropertiesEditor({ running }: { running: boolean }) {
+function PropertiesEditor({ serverId, running }: { serverId: string; running: boolean }) {
+  const api = useApi();
   const [original, setOriginal] = useState<Props | null>(null);
   const [values, setValues] = useState<Props>({});
   const [error, setError] = useState<string | null>(null);
   const saver = useSaver();
 
   useEffect(() => {
-    get<{ properties: Props }>('/api/admin/properties')
+    api
+      .get<{ properties: Props }>(`/api/v1/servers/${serverId}/properties`)
       .then(({ properties }) => {
         setOriginal(properties);
         setValues(properties);
       })
       .catch((err: ApiError) => setError(err.message));
-  }, []);
+  }, [api, serverId]);
 
   const value = (key: string) => values[key] ?? DEFAULTS[key] ?? '';
   const set = (key: string, v: string) => setValues((prev) => ({ ...prev, [key]: v }));
@@ -300,7 +295,7 @@ function PropertiesEditor({ running }: { running: boolean }) {
         message={saver.message}
         onSave={() =>
           saver.run(async () => {
-            const res = await put<{ properties: Props; restartRequired: boolean }>('/api/admin/properties', { properties: changes });
+            const res = await api.put<{ properties: Props; restartRequired: boolean }>(`/api/v1/servers/${serverId}/properties`, { properties: changes });
             setOriginal(res.properties);
             setValues(res.properties);
             if (running) return restartNote;

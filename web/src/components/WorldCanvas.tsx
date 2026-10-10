@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import type { World, WorldState } from '../world';
 
 /**
- * The live Minecraft island behind the whole page. Three.js loads as a separate chunk after
- * the first paint; without WebGL the page keeps a static gradient instead.
+ * The live archipelago behind the whole page. Three.js loads as a separate chunk after the first
+ * paint; without WebGL the page keeps a static gradient instead. `pickRef` lets the page ask which
+ * island is under a click.
  */
-export function WorldCanvas({ state }: { state: WorldState }) {
+export function WorldCanvas({ state, pickRef }: { state: WorldState; pickRef?: MutableRefObject<((x: number, y: number) => string | null) | null> }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const world = useRef<World | null>(null);
   const latest = useRef(state);
@@ -19,6 +20,7 @@ export function WorldCanvas({ state }: { state: WorldState }) {
         if (disposed || !canvas.current || !webglAvailable()) return;
         world.current = new WorldClass(canvas.current);
         world.current.setState(latest.current);
+        if (pickRef) pickRef.current = (x, y) => world.current?.pick(x, y) ?? null;
         requestAnimationFrame(() => !disposed && setReady(true));
       })
       .catch((err: unknown) => console.warn('A 3D világ nem tölthető be:', err));
@@ -26,8 +28,9 @@ export function WorldCanvas({ state }: { state: WorldState }) {
       disposed = true;
       world.current?.dispose();
       world.current = null;
+      if (pickRef) pickRef.current = null;
     };
-  }, []);
+  }, [pickRef]);
 
   useEffect(() => {
     world.current?.setState(state);

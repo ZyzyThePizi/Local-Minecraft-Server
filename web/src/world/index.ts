@@ -1,43 +1,42 @@
 import {
   ACESFilmicToneMapping,
-  AdditiveBlending,
-  BoxGeometry,
-  Color,
+  Box3,
   DirectionalLight,
-  DoubleSide,
   Fog,
   Group,
   HemisphereLight,
-  InstancedMesh,
   Mesh,
   MeshBasicMaterial,
   MeshLambertMaterial,
-  Object3D,
   PCFShadowMap,
   PerspectiveCamera,
   PlaneGeometry,
+  Raycaster,
   Scene,
   SRGBColorSpace,
+  Vector2,
   Vector3,
   WebGLRenderer,
   type Material,
 } from 'three';
-import { disposeMobResources, Mob, type MobKind } from './mobs';
+import { createShared, disposeShared, Island, SIGNAL, type IslandInfo, type Shared, type WorldServerState } from './island';
+import { disposeMobResources, makeNameTag } from './mobs';
 import { clamp, damp, dampAngle, mulberry32 } from './random';
 import { cloneMood, createCelestials, createClouds, createParticles, createSkyDome, dampMood, dotTexture, MOODS, type MoodName } from './sky';
-import { BLOCK, buildGeometry, Terrain, WATER, type StationId } from './terrain';
-import { buildAtlas, buildPortalTexture, buildWaterTexture, pixelTexture, shadeRGB } from './textures';
+import { WATER, type StationId } from './terrain';
+import { buildAtlas, buildPortalTexture, buildWaterTexture } from './textures';
 
 export type { StationId } from './terrain';
-
-export type WorldServerState = 'loading' | 'offline' | 'stopped' | 'starting' | 'running' | 'stopping' | 'crashed';
+export type { IslandInfo, WorldServerState } from './island';
 
 export interface WorldState {
-  server: WorldServerState;
-  playerCount: number;
-  playerNames: string[];
+  islands: IslandInfo[];
+  /** The island the page shows (machine view), or null for the archipelago overview. */
+  focus: string | null;
+  /** The admin tab's station on the focused island. */
   station: StationId | null;
-  installing: boolean;
+  /** Show the empty "add an island" slot in the overview. */
+  addSlot: boolean;
 }
 
 const MOOD_FOR: Record<WorldServerState, MoodName> = {
@@ -50,8 +49,19 @@ const MOOD_FOR: Record<WorldServerState, MoodName> = {
   crashed: 'crashed',
 };
 
-const SIGNAL = '#c8f43a';
-const MAX_PLAYERS_SHOWN = 12;
+const MAX_ISLANDS = 9;
+const ADD_KEY = 'add';
+
+/** Island slots: the first in the middle, six around it, then an outer ring. */
+function slotPosition(i: number) {
+  if (i === 0) return { x: 0, z: 0 };
+  if (i <= 6) {
+    const a = ((i - 1) / 6) * Math.PI * 2 + Math.PI / 6;
+    return { x: Math.sin(a) * 62, z: Math.cos(a) * 62 };
+  }
+  const a = ((i - 7) / 12) * Math.PI * 2;
+  return { x: Math.sin(a) * 124, z: Math.cos(a) * 124 };
+}
 
 export function webglAvailable() {
   try {
@@ -62,17 +72,16 @@ export function webglAvailable() {
   }
 }
 
+/** The archipelago behind the whole page: one island per machine in the hub. */
 export class World {
   private renderer: WebGLRenderer;
   private scene = new Scene();
-  private camera = new PerspectiveCamera(35, 1, 0.1, 900);
-  private terrain = new Terrain();
+  private camera = new PerspectiveCamera(35, 1, 0.1, 1400);
   private mood = cloneMood(MOODS.night);
   private targetMood = MOODS.night;
-  private state: WorldState = { server: 'loading', playerCount: 0, playerNames: [], station: null, installing: false };
-  private mobs: Mob[] = [];
-  private nightMobs: Mob[] = [];
-  private players: Mob[] = [];
+  private state: WorldState = { islands: [], focus: null, station: null, addSlot: false };
+  private islands = new Map<string, Island>();
+  private shared: Shared;
   private disposables: { dispose(): void }[] = [];
   private raf = 0;
   private last = performance.now();
@@ -80,37 +89,39 @@ export class World {
   private reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
   private coarse = matchMedia('(pointer: coarse)').matches;
   private mobile = Math.min(innerWidth, innerHeight) < 640;
+  private canvas: HTMLCanvasElement;
 
-  // lights & scene parts
   private hemi = new HemisphereLight();
   private sunLight = new DirectionalLight();
   private sky = createSkyDome();
   private celestial = createCelestials();
   private clouds = createClouds();
   private water!: Mesh<PlaneGeometry, MeshLambertMaterial>;
-  private beam!: Group;
-  private beamMats: MeshBasicMaterial[] = [];
-  private beamLevel = 0;
-  private portalMat!: MeshBasicMaterial;
-  private chestLid!: Group;
-  private installLevel = 0;
   private fireflies!: ReturnType<typeof createParticles>;
   private sparks!: ReturnType<typeof createParticles>;
-  private fireflySeeds: Float32Array;
+  private addSlot = new Group();
+  private addTag = makeNameTag('+ Új sziget');
+  private addLevel = 0;
+  private raycaster = new Raycaster();
 
-  // camera
   private cam = { az: 0.75, el: 0.5, dist: 60, tx: 0, ty: 5, tz: 0, offset: 0, offY: 0 };
   private baseAz = 0.75;
   private pointer = { x: 0, y: 0, sx: 0, sy: 0 };
   private focus = 0;
 
-  constructor(private canvas: HTMLCanvasElement) {
+  constructor(canvas: HTMLCanvasElement) {
+    this.canvas = canvas;
     this.renderer = new WebGLRenderer({ canvas, antialias: !this.mobile, powerPreference: 'high-performance' });
     this.renderer.outputColorSpace = SRGBColorSpace;
     this.renderer.toneMapping = ACESFilmicToneMapping;
     this.renderer.shadowMap.enabled = !this.mobile;
     this.renderer.shadowMap.type = PCFShadowMap;
-    this.fireflySeeds = new Float32Array(160 * 4);
+
+    const atlas = buildAtlas();
+    const portalTex = buildPortalTexture();
+    portalTex.repeat.set(2, 3);
+    this.shared = createShared(atlas, portalTex);
+    this.disposables.push(atlas, portalTex);
 
     this.buildScene();
     this.resize();
@@ -120,181 +131,116 @@ export class World {
     this.raf = requestAnimationFrame(this.frame);
   }
 
-  // ---------- setup ----------
-
   private buildScene() {
-    const { scene, terrain } = this;
+    const { scene } = this;
     scene.fog = new Fog(0x000000, 60, 170);
     scene.add(this.sky.mesh, this.celestial.group, this.celestial.stars, this.clouds.mesh, this.hemi, this.sunLight, this.sunLight.target);
     this.disposables.push(this.sky.material, this.sky.mesh.geometry, this.clouds.material, this.clouds.mesh.geometry);
 
-    const atlas = buildAtlas();
-    const solidMat = new MeshLambertMaterial({ map: atlas, vertexColors: true });
-    const solid = new Mesh(buildGeometry(terrain, (b) => b !== BLOCK.beacon), solidMat);
-    solid.castShadow = solid.receiveShadow = true;
-    const glowMat = new MeshBasicMaterial({ map: atlas });
-    const glow = new Mesh(buildGeometry(terrain, (b) => b === BLOCK.beacon), glowMat);
-    scene.add(solid, glow);
-    this.disposables.push(atlas, solidMat, solid.geometry, glowMat, glow.geometry);
-
-    // Ocean and the sea floor beyond the island
+    // Ocean and the sea floor between the islands
     const waterTex = buildWaterTexture();
-    waterTex.repeat.set(140, 140);
-    const water = new Mesh(new PlaneGeometry(280, 280), new MeshLambertMaterial({ map: waterTex, color: '#ffffff', transparent: true, opacity: 0.82, depthWrite: false }));
+    waterTex.repeat.set(1000, 1000);
+    const water = new Mesh(new PlaneGeometry(2000, 2000), new MeshLambertMaterial({ map: waterTex, color: '#ffffff', transparent: true, opacity: 0.82, depthWrite: false }));
     water.rotation.x = -Math.PI / 2;
     water.position.y = WATER - 0.12;
     water.receiveShadow = true;
     this.water = water;
-    // Sand floor at the same height and tone as the island's underwater sand, so the map edge disappears.
-    const floor = new Mesh(new PlaneGeometry(280, 280), new MeshLambertMaterial({ color: '#d6c99c' }));
+    const floor = new Mesh(new PlaneGeometry(2000, 2000), new MeshLambertMaterial({ color: '#d6c99c' }));
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = 1.99;
     floor.receiveShadow = true;
     scene.add(floor, water);
     this.disposables.push(waterTex, water.geometry, water.material, floor.geometry, floor.material as Material);
 
-    // Sun / moon light with shadows over the island
     const s = this.sunLight;
     s.castShadow = !this.mobile;
     s.shadow.mapSize.set(2048, 2048);
-    Object.assign(s.shadow.camera, { left: -30, right: 30, top: 30, bottom: -30, near: 1, far: 160 });
+    Object.assign(s.shadow.camera, { left: -32, right: 32, top: 32, bottom: -32, near: 1, far: 180 });
     s.shadow.bias = -0.0004;
     s.shadow.normalBias = 0.03;
 
-    this.buildFlowers();
-    this.buildStations();
-    this.buildMobs();
+    // The empty slot for the next island: a shallow, pale reef with a label.
+    const reefMat = new MeshBasicMaterial({ color: '#e8f0d0', transparent: true, opacity: 0, depthWrite: false });
+    const rnd = mulberry32(11);
+    for (let i = 0; i < 14; i++) {
+      const m = new Mesh(this.shared.cubeGeo, reefMat);
+      m.scale.set(3 + rnd() * 6, 0.3, 3 + rnd() * 6);
+      m.position.set((rnd() - 0.5) * 22, WATER - 0.05, (rnd() - 0.5) * 22);
+      this.addSlot.add(m);
+    }
+    this.addTag.scale.multiplyScalar(7);
+    this.addTag.position.y = 12;
+    this.addSlot.add(this.addTag);
+    this.addSlot.visible = false;
+    this.addSlot.userData.mat = reefMat;
+    scene.add(this.addSlot);
+    this.disposables.push(reefMat);
 
     const dots = dotTexture();
     this.disposables.push(dots);
     this.fireflies = createParticles(160, SIGNAL, 0.22, dots);
     this.sparks = createParticles(70, SIGNAL, 0.3, dots);
     scene.add(this.fireflies.points, this.sparks.points);
-    const rnd = mulberry32(3);
-    for (let i = 0; i < 160; i++) {
-      const x = (rnd() - 0.5) * 38;
-      const z = (rnd() - 0.5) * 38;
-      const g = terrain.groundAt(x, z) ?? WATER + 1;
-      this.fireflySeeds.set([x, g + 0.6 + rnd() * 2.2, z, rnd() * 100], i * 4);
-    }
-  }
-
-  private buildFlowers() {
-    const { flowers } = this.terrain;
-    const stemGeo = new BoxGeometry(0.07, 0.38, 0.07);
-    const bloomGeo = new BoxGeometry(0.2, 0.2, 0.2);
-    const stemMat = new MeshLambertMaterial({ color: '#3f7a2a' });
-    const bloomMat = new MeshLambertMaterial({ color: '#ffffff' });
-    const stems = new InstancedMesh(stemGeo, stemMat, flowers.length);
-    const blooms = new InstancedMesh(bloomGeo, bloomMat, flowers.length);
-    const dummy = new Object3D();
-    flowers.forEach((f, i) => {
-      dummy.position.set(f.x, f.y + 0.19, f.z);
-      dummy.updateMatrix();
-      stems.setMatrixAt(i, dummy.matrix);
-      dummy.position.y = f.y + 0.42;
-      dummy.rotation.y = i;
-      dummy.updateMatrix();
-      blooms.setMatrixAt(i, dummy.matrix);
-      dummy.rotation.y = 0;
-      blooms.setColorAt(i, new Color(f.color));
-    });
-    this.scene.add(stems, blooms);
-    this.disposables.push(stemGeo, bloomGeo, stemMat, bloomMat);
-  }
-
-  private buildStations() {
-    const { control, packs, instances } = this.terrain.stations;
-
-    // Beacon beam (lit while the server runs)
-    this.beam = new Group();
-    this.beam.position.set(control.x, control.y + 0.5, control.z);
-    for (const [w, opacity] of [[0.32, 0.9], [0.7, 0.22], [1.3, 0.07]] as const) {
-      const mat = new MeshBasicMaterial({ color: SIGNAL, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false, fog: false });
-      mat.userData.base = opacity;
-      const m = new Mesh(new BoxGeometry(w, 120, w), mat);
-      m.position.y = 60;
-      this.beam.add(m);
-      this.beamMats.push(mat);
-      this.disposables.push(mat, m.geometry);
-    }
-    this.scene.add(this.beam);
-
-    // Nether portal surface
-    const portalTex = buildPortalTexture();
-    portalTex.repeat.set(2, 3);
-    this.portalMat = new MeshBasicMaterial({ map: portalTex, transparent: true, opacity: 0.82, side: DoubleSide, depthWrite: false });
-    const portal = new Mesh(new PlaneGeometry(2, 3), this.portalMat);
-    portal.rotation.y = Math.PI / 2;
-    portal.position.set(instances.x, instances.y, instances.z - 0.5);
-    this.scene.add(portal);
-    this.disposables.push(portalTex, this.portalMat, portal.geometry);
-
-    // Chest (its lid opens during a modpack install)
-    const wood = [125, 86, 40] as const;
-    const chestTex = pixelTexture(14, 14, (set, rnd) => {
-      for (let y = 0; y < 14; y++) {
-        for (let x = 0; x < 14; x++) {
-          const frame = x === 0 || y === 0 || x === 13 || y === 13;
-          set(x, y, shadeRGB(frame ? [74, 50, 22] : wood, 1 + (rnd() - 0.5) * 0.14));
-        }
-      }
-    });
-    const chestMat = new MeshLambertMaterial({ map: chestTex });
-    const chest = new Group();
-    chest.position.set(packs.x, packs.y - 0.6, packs.z);
-    chest.rotation.y = packs.angle;
-    const base = new Mesh(new BoxGeometry(0.875, 0.62, 0.875), chestMat);
-    base.position.y = 0.31;
-    this.chestLid = new Group();
-    this.chestLid.position.set(0, 0.62, -0.4375);
-    const lid = new Mesh(new BoxGeometry(0.875, 0.25, 0.875), chestMat);
-    lid.position.set(0, 0.125, 0.4375);
-    const latch = new Mesh(new BoxGeometry(0.12, 0.25, 0.06), new MeshLambertMaterial({ color: '#c9c9c9' }));
-    latch.position.set(0, 0.05, 0.9);
-    this.chestLid.add(lid, latch);
-    chest.add(base, this.chestLid);
-    for (const m of [base, lid]) m.castShadow = m.receiveShadow = true;
-    this.scene.add(chest);
-    this.disposables.push(chestTex, chestMat, base.geometry, lid.geometry, latch.geometry, latch.material as Material);
-  }
-
-  private buildMobs() {
-    const counts: [MobKind, number][] = this.mobile
-      ? [['pig', 2], ['cow', 2], ['sheep', 2], ['chicken', 3]]
-      : [['pig', 3], ['cow', 3], ['sheep', 4], ['chicken', 5]];
-    let seed = 100;
-    for (const [kind, n] of counts) {
-      for (let i = 0; i < n; i++) this.addMob(new Mob(kind, this.terrain, seed++), this.mobs);
-    }
-    for (const kind of ['zombie', 'zombie', 'creeper', 'creeper'] as MobKind[]) {
-      const mob = new Mob(kind, this.terrain, seed++);
-      mob.presence = 0;
-      this.addMob(mob, this.nightMobs);
-    }
-    for (let i = 0; i < MAX_PLAYERS_SHOWN; i++) {
-      const mob = new Mob('player', this.terrain, 500 + i);
-      mob.presence = 0;
-      this.addMob(mob, this.players);
-    }
-  }
-
-  private addMob(mob: Mob, list: Mob[]) {
-    list.push(mob);
-    this.scene.add(mob.root);
   }
 
   // ---------- state ----------
 
   setState(next: WorldState) {
     this.state = next;
-    this.targetMood = MOODS[MOOD_FOR[next.server]];
-    const shown = Math.min(next.playerCount, MAX_PLAYERS_SHOWN);
-    this.players.forEach((p, i) => {
-      p.presence = i < shown ? 1 : 0;
-      p.setName(i < shown ? (next.playerNames[i] ?? null) : null);
+    const shown = next.islands.slice(0, MAX_ISLANDS);
+    const keys = new Set(shown.map((i) => i.key));
+    for (const [key, island] of this.islands) {
+      if (keys.has(key)) continue;
+      this.scene.remove(island.group);
+      island.dispose();
+      this.islands.delete(key);
+    }
+    shown.forEach((info, i) => {
+      let island = this.islands.get(info.key);
+      if (!island) {
+        island = new Island(info, this.shared, this.mobile);
+        this.islands.set(info.key, island);
+        this.scene.add(island.group);
+      } else island.setInfo(info);
+      island.slot = i;
+      const p = slotPosition(i);
+      island.group.position.x = p.x;
+      island.group.position.z = p.z;
     });
+    const addPos = slotPosition(shown.length);
+    this.addSlot.position.set(addPos.x, 0, addPos.z);
+
+    const focused = next.focus ? this.islands.get(next.focus) : null;
+    let mood: WorldServerState;
+    if (focused) mood = focused.info.online ? focused.info.selectedState : 'offline';
+    else {
+      const states = shown.filter((i) => i.online).flatMap((i) => i.servers.map((s) => s.state));
+      mood = states.includes('running') ? 'running' : states.includes('starting') ? 'starting' : shown.some((i) => i.online) ? 'stopped' : 'offline';
+    }
+    this.targetMood = MOODS[MOOD_FOR[mood]];
     if (this.reducedMotion) this.renderStill();
+  }
+
+  /** The island (machine id) or the empty slot under a screen point, for clicks in the overview. */
+  pick(clientX: number, clientY: number): string | null {
+    const rect = this.canvas.getBoundingClientRect();
+    const ndc = new Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const ray = this.raycaster.ray;
+    const box = new Box3();
+    let best: { key: string; d: number } | null = null;
+    const test = (key: string, x: number, z: number, top: number) => {
+      box.min.set(x - 22, 0, z - 22);
+      box.max.set(x + 22, top, z + 22);
+      const hit = ray.intersectBox(box, new Vector3());
+      if (hit) {
+        const d = hit.distanceTo(ray.origin);
+        if (!best || d < best.d) best = { key, d };
+      }
+    };
+    for (const island of this.islands.values()) test(island.key, island.group.position.x, island.group.position.z, 22);
+    if (this.addSlot.visible) test(ADD_KEY, this.addSlot.position.x, this.addSlot.position.z, 8);
+    return (best as { key: string } | null)?.key ?? null;
   }
 
   // ---------- loop ----------
@@ -308,7 +254,6 @@ export class World {
     this.renderer.render(this.scene, this.camera);
   };
 
-  /** Reduced motion: settle every transition at once and draw a single frame. */
   private renderStill() {
     for (let i = 0; i < 40; i++) this.tick(0.25, true);
     this.renderer.render(this.scene, this.camera);
@@ -316,11 +261,10 @@ export class World {
 
   private tick(dt: number, still = false) {
     this.time += dt;
-    const { mood, state, terrain } = this;
+    const { mood, state } = this;
     dampMood(mood, this.targetMood, 0.9, dt);
     const night = 1 - mood.daylight;
 
-    // lighting
     this.renderer.toneMappingExposure = mood.exposure;
     this.hemi.color.copy(mood.hemiSky);
     this.hemi.groundColor.copy(mood.hemiGround);
@@ -334,11 +278,8 @@ export class World {
     this.water.material.color.copy(mood.water);
     this.water.material.map!.offset.x += dt * 0.025;
 
-    // sun by day, moon by night (the directional light follows whichever is up)
     const elev = 0.35 + mood.daylight * 0.55;
     const dir = new Vector3(Math.sin(0.9) * Math.cos(elev), Math.sin(elev), Math.cos(0.9) * Math.cos(elev));
-    this.sunLight.position.copy(dir).multiplyScalar(80);
-    this.sunLight.target.position.set(0, 0, 0);
     const camPos = this.camera.position;
     const { sun, sunGlow, moon, starMat } = this.celestial;
     for (const [mesh, visible] of [[sun, mood.daylight], [sunGlow, mood.daylight], [moon, night]] as const) {
@@ -355,50 +296,58 @@ export class World {
     this.clouds.material.color.setRGB(1 - night * 0.7, 1 - night * 0.68, 1 - night * 0.6);
     if (!still) this.clouds.update(dt);
 
-    // beacon: on while running, flickers while starting
-    const beamGoal = state.server === 'running' ? 1 : state.server === 'starting' ? 0.35 + Math.abs(Math.sin(this.time * 6)) * 0.3 : 0;
-    this.beamLevel = damp(this.beamLevel, beamGoal, 3, dt);
-    const pulse = 0.85 + Math.sin(this.time * 2.2) * 0.15;
-    for (const m of this.beamMats) m.opacity = (m.userData.base as number) * this.beamLevel * pulse;
-    this.beam.visible = this.beamLevel > 0.01;
+    // The shadow camera follows what the camera looks at.
+    this.sunLight.target.position.set(this.cam.tx, 0, this.cam.tz);
+    this.sunLight.position.set(this.cam.tx, 0, this.cam.tz).addScaledVector(dir, 90);
+    this.shared.cloudMat.opacity = 0;
 
-    this.portalMat.map!.offset.y -= dt * 0.18;
-    this.portalMat.map!.offset.x = Math.sin(this.time * 0.6) * 0.1;
+    const focused = state.focus ? (this.islands.get(state.focus) ?? null) : null;
+    const overview = 1 - this.focus;
+    for (const island of this.islands.values()) {
+      // Up close only the focused island moves; in the overview all of them do.
+      const animate = !still && (!focused || island === focused);
+      island.update(still ? 0.25 : dt, this.time, night, animate);
+      island.setTagOpacity(focused ? (island === focused ? 0 : 0.5) : overview * 0.95);
+      this.shared.cloudMat.opacity = Math.max(this.shared.cloudMat.opacity, island.offlineLevel * 0.85);
+    }
 
-    this.installLevel = damp(this.installLevel, state.installing ? 1 : 0, 3, dt);
-    this.chestLid.rotation.x = -this.installLevel * (1.1 + Math.sin(this.time * 3) * 0.08);
+    this.addLevel = damp(this.addLevel, state.addSlot && !focused ? 1 : 0, 3, dt);
+    (this.addSlot.userData.mat as MeshBasicMaterial).opacity = this.addLevel * 0.2;
+    this.addTag.material.opacity = this.addLevel * 0.9;
+    this.addSlot.visible = this.addLevel > 0.02;
 
-    this.updateParticles(night);
-
-    // mobs
-    for (const m of this.nightMobs) m.presence = night > 0.6 ? 1 : 0;
-    if (!still) for (const m of [...this.mobs, ...this.nightMobs, ...this.players]) m.update(dt, this.time, terrain);
-    else for (const m of [...this.mobs, ...this.nightMobs, ...this.players]) m.update(0, this.time, terrain);
-
+    this.updateParticles(night, focused ?? this.islands.values().next().value ?? null);
     this.updateCamera(dt, still);
   }
 
-  private updateParticles(night: number) {
+  private updateParticles(night: number, island: Island | null) {
     const t = this.time;
     const ff = this.fireflies;
     ff.material.opacity = this.mood.fireflies * 0.9;
-    ff.points.visible = this.mood.fireflies > 0.02;
-    if (ff.points.visible) {
+    ff.points.visible = Boolean(island) && this.mood.fireflies > 0.02;
+    if (ff.points.visible && island) {
+      ff.points.position.copy(island.group.position);
       const arr = ff.positions.array as Float32Array;
+      const seeds = island.fireflySeeds;
       for (let i = 0; i < 160; i++) {
-        const [x, y, z, s] = this.fireflySeeds.subarray(i * 4, i * 4 + 4) as unknown as number[];
-        arr[i * 3] = x! + Math.sin(t * 0.4 + s!) * 1.2;
-        arr[i * 3 + 1] = y! + Math.sin(t * 0.9 + s! * 2) * 0.4;
-        arr[i * 3 + 2] = z! + Math.cos(t * 0.35 + s!) * 1.2;
+        const x = seeds[i * 4]!;
+        const y = seeds[i * 4 + 1]!;
+        const z = seeds[i * 4 + 2]!;
+        const s = seeds[i * 4 + 3]!;
+        arr[i * 3] = x + Math.sin(t * 0.4 + s) * 1.2;
+        arr[i * 3 + 1] = y + Math.sin(t * 0.9 + s * 2) * 0.4;
+        arr[i * 3 + 2] = z + Math.cos(t * 0.35 + s) * 1.2;
       }
       ff.positions.needsUpdate = true;
     }
 
+    // Install sparks rise from the chest of whichever island is installing (the focused one first).
+    const installing = island && island.installLevel > 0.02 ? island : [...this.islands.values()].find((i) => i.installLevel > 0.02);
     const sp = this.sparks;
-    sp.material.opacity = this.installLevel * (0.6 + night * 0.4);
-    sp.points.visible = this.installLevel > 0.02;
-    if (sp.points.visible) {
-      const { x: cx, y: cy, z: cz } = this.terrain.stations.packs;
+    sp.material.opacity = (installing?.installLevel ?? 0) * (0.6 + night * 0.4);
+    sp.points.visible = Boolean(installing);
+    if (installing) {
+      const { x: cx, y: cy, z: cz } = installing.stationWorld('packs');
       const arr = sp.positions.array as Float32Array;
       for (let i = 0; i < 70; i++) {
         const life = (t * 0.35 + i / 70) % 1;
@@ -413,59 +362,81 @@ export class World {
   }
 
   private updateCamera(dt: number, still: boolean) {
-    const { camera, cam, terrain, state } = this;
+    const { camera, cam, state } = this;
     const w = this.canvas.clientWidth || innerWidth;
     const h = this.canvas.clientHeight || innerHeight;
     const wide = w >= 1024;
+    const focused = state.focus ? (this.islands.get(state.focus) ?? null) : null;
+
+    // 1 = flown to an island, 0 = archipelago overview.
+    this.focus = still ? (focused ? 1 : 0) : damp(this.focus, focused ? 1 : 0, 2.2, dt);
 
     // How far the admin console has scrolled into view (0 = hero, 1 = admin).
     const admin = document.getElementById('admin');
-    let focusGoal = 0;
-    if (admin && state.station) {
+    let adminGoal = 0;
+    if (admin && state.station && focused) {
       const top = admin.getBoundingClientRect().top;
-      focusGoal = clamp(1 - top / (h * 0.85), 0, 1);
+      adminGoal = clamp(1 - top / (h * 0.85), 0, 1);
     }
-    this.focus = still ? focusGoal : damp(this.focus, focusGoal, 6, dt);
-    const f = this.focus * this.focus * (3 - 2 * this.focus);
+    const a = adminGoal * adminGoal * (3 - 2 * adminGoal);
 
-    // overview: the whole island, fitted to the free part of the screen
     const vfov = (camera.fov * Math.PI) / 180;
     const hfov = 2 * Math.atan(Math.tan(vfov / 2) * camera.aspect);
     const usable = wide ? 0.58 : 0.96;
-    const fitW = 46;
-    const distW = fitW / 2 / Math.tan((hfov * usable) / 2);
-    const distH = 30 / 2 / Math.tan(vfov / 2);
-    const overviewDist = clamp(Math.max(distW, distH) * 1.05, 40, 140);
-    if (!still && !this.reducedMotion && f < 0.5) this.baseAz += dt * 0.03;
+    const fit = (width: number, depth: number) => clamp(Math.max(width / 2 / Math.tan((hfov * usable) / 2), depth / 2 / Math.tan(vfov / 2)) * 1.05, 40, 520);
+    if (!still && !this.reducedMotion && a < 0.5) this.baseAz += dt * 0.03;
 
-    const st = state.station ? terrain.stations[state.station] : null;
+    // Overview: every island (and the empty slot) fitted to the free part of the screen.
+    let minX = -24;
+    let maxX = 24;
+    let minZ = -24;
+    let maxZ = 24;
+    const points = [...this.islands.values()].map((i) => i.group.position);
+    if (this.addSlot.visible) points.push(this.addSlot.position);
+    for (const p of points) {
+      minX = Math.min(minX, p.x - 24);
+      maxX = Math.max(maxX, p.x + 24);
+      minZ = Math.min(minZ, p.z - 24);
+      maxZ = Math.max(maxZ, p.z + 24);
+    }
+    const span = Math.max(maxX - minX, maxZ - minZ);
+    const overviewGoal = { tx: (minX + maxX) / 2, tz: (minZ + maxZ) / 2, dist: fit(span * 0.95, span * 0.62), ty: wide ? 3.5 : 6 };
+
+    const islandGoal = focused ? { tx: focused.group.position.x, tz: focused.group.position.z, dist: fit(46, 30), ty: wide ? 3.5 : 6 } : overviewGoal;
+    const f = this.focus;
     const goal = {
       az: this.baseAz,
-      el: wide ? 0.4 : 0.5,
-      dist: overviewDist,
-      tx: 0,
-      ty: wide ? 3.5 : 6,
-      tz: 0,
+      el: (wide ? 0.4 : 0.5) + (1 - f) * 0.12,
+      dist: overviewGoal.dist + (islandGoal.dist - overviewGoal.dist) * f,
+      tx: overviewGoal.tx + (islandGoal.tx - overviewGoal.tx) * f,
+      ty: overviewGoal.ty,
+      tz: overviewGoal.tz + (islandGoal.tz - overviewGoal.tz) * f,
       offset: wide ? -0.2 : 0,
       offY: 0,
     };
-    if (st && f > 0) {
+
+    if (focused && a > 0) {
+      const station = focused.stationWorld(state.station);
       const sway = Math.sin(this.time * 0.25) * 0.12;
-      const stationAz = st.angle + 0.4 + sway;
-      let dAz = ((stationAz - goal.az + Math.PI) % (Math.PI * 2)) - Math.PI;
-      if (dAz < -Math.PI) dAz += Math.PI * 2;
-      goal.az += dAz * f;
-      goal.el += (0.34 - goal.el) * f;
-      goal.dist += ((wide ? 16.5 : 20) - goal.dist) * f;
-      goal.tx += (st.x - goal.tx) * f;
-      goal.ty += (st.y + 0.4 - goal.ty) * f;
-      goal.tz += (st.z - goal.tz) * f;
-      // Frame the station inside the transparent "window" at the top of the admin section.
-      goal.offset += ((wide ? -0.12 : 0) - goal.offset) * f;
-      goal.offY += 0.24 * f;
+      if (station.angle !== null) {
+        const stationAz = station.angle + 0.4 + sway;
+        let dAz = ((stationAz - goal.az + Math.PI) % (Math.PI * 2)) - Math.PI;
+        if (dAz < -Math.PI) dAz += Math.PI * 2;
+        goal.az += dAz * a;
+        goal.el += (0.34 - goal.el) * a;
+        goal.dist += ((wide ? 16.5 : 20) - goal.dist) * a;
+        goal.ty += (station.y + 0.4 - goal.ty) * a;
+      } else {
+        // "Machine" tab: the whole island from a little higher.
+        goal.el += (0.55 - goal.el) * a;
+        goal.dist += ((wide ? 48 : 58) - goal.dist) * a;
+      }
+      goal.tx += (station.x - goal.tx) * a;
+      goal.tz += (station.z - goal.tz) * a;
+      goal.offset += ((wide ? -0.12 : 0) - goal.offset) * a;
+      goal.offY += 0.24 * a;
     }
 
-    // pointer parallax (fine pointers only)
     if (!this.coarse && !this.reducedMotion) {
       this.pointer.sx = damp(this.pointer.sx, this.pointer.x, 3, dt);
       this.pointer.sy = damp(this.pointer.sy, this.pointer.y, 3, dt);
@@ -517,8 +488,11 @@ export class World {
     removeEventListener('resize', this.resize);
     removeEventListener('pointermove', this.onPointer);
     document.removeEventListener('visibilitychange', this.onVisibility);
-    for (const m of [...this.mobs, ...this.nightMobs, ...this.players]) m.setName(null);
+    for (const island of this.islands.values()) island.dispose();
+    this.addTag.material.map?.dispose();
+    this.addTag.material.dispose();
     for (const d of this.disposables) d.dispose();
+    disposeShared(this.shared);
     disposeMobResources();
     this.renderer.dispose();
   }

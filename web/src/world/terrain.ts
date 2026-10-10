@@ -60,6 +60,19 @@ const STATION_ANGLES: Record<StationId, number> = {
 };
 const STATION_RADIUS = 10;
 
+/** One beacon per installed server, on the diagonals between the stations: [radius, angle]. */
+const BEACON_SPOTS: [number, number][] = [
+  [6, Math.PI / 4],
+  [6, (3 * Math.PI) / 4],
+  [6, (-3 * Math.PI) / 4],
+  [6, -Math.PI / 4],
+  [15, Math.PI / 4],
+  [15, (3 * Math.PI) / 4],
+  [15, (-3 * Math.PI) / 4],
+  [15, -Math.PI / 4],
+];
+export const MAX_BEACONS = BEACON_SPOTS.length;
+
 export class Terrain {
   blocks = new Uint8Array(SIZE * SIZE * MAX_H);
   /** Height a mob stands on for each column. */
@@ -68,6 +81,8 @@ export class Terrain {
   blocked = new Uint8Array(SIZE * SIZE);
   stations = {} as Record<StationId, Station>;
   flowers: { x: number; y: number; z: number; color: number }[] = [];
+  /** Top of each server beacon's iron base, in island coordinates. */
+  beacons: { x: number; y: number; z: number }[] = [];
 
   constructor(seed = 0xea) {
     this.generate(seed);
@@ -122,6 +137,14 @@ export class Terrain {
       for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) this.heights[(gz + dz) * SIZE + gx + dx] = h;
       pads.push({ id, gx, gz, h });
     }
+    const spots: { gx: number; gz: number; h: number }[] = [];
+    for (const [r, a] of BEACON_SPOTS) {
+      const gx = Math.round(HALF + Math.sin(a) * r);
+      const gz = Math.round(HALF + Math.cos(a) * r);
+      const h = Math.max(WATER + 2, this.heights[gz * SIZE + gx]!);
+      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) this.heights[(gz + dz) * SIZE + gx + dx] = h;
+      spots.push({ gx, gz, h });
+    }
 
     for (let z = 0; z < SIZE; z++) {
       for (let x = 0; x < SIZE; x++) {
@@ -140,7 +163,8 @@ export class Terrain {
       }
     }
 
-    const nearPad = (x: number, z: number, r: number) => pads.some((p) => Math.abs(p.gx - x) <= r && Math.abs(p.gz - z) <= r);
+    const nearPad = (x: number, z: number, r: number) =>
+      pads.some((p) => Math.abs(p.gx - x) <= r && Math.abs(p.gz - z) <= r) || spots.some((p) => Math.abs(p.gx - x) <= r - 1 && Math.abs(p.gz - z) <= r - 1);
 
     // Trees
     const trees: [number, number][] = [];
@@ -178,6 +202,11 @@ export class Terrain {
     }
 
     for (const p of pads) this.buildStation(p.id, p.gx, p.gz, p.h);
+    for (const p of spots) {
+      this.set(p.gx, p.h, p.gz, BLOCK.iron);
+      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) this.blocked[(p.gz + dz) * SIZE + p.gx + dx] = 1;
+      this.beacons.push({ x: p.gx - HALF + 0.5, y: p.h + 1, z: p.gz - HALF + 0.5 });
+    }
   }
 
   private buildStation(id: StationId, gx: number, gz: number, h: number) {

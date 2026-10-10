@@ -1,6 +1,7 @@
 import { Eraser } from 'lucide-react';
 import { useState } from 'react';
-import { ApiError, get, post } from '../api';
+import { ApiError } from '../api';
+import { useApi } from '../hub/HubProvider';
 import { usePoll } from '../hooks';
 import type { KnownPlayer, ServerState } from '../types';
 import { Notice, Panel, PanelTitle } from './ui';
@@ -9,15 +10,18 @@ const chipButton = 'h-7 border px-2 font-mono text-[11px] tracking-[0.06em] uppe
 
 /** Everyone who has joined this server: online status, one-click OP, and a fresh-start reset. */
 export function PlayersPanel({
+  serverId,
   state,
   target,
   onTarget,
 }: {
+  serverId: string;
   state: ServerState;
   target: string;
   onTarget: (name: string) => void;
 }) {
-  const list = usePoll(() => get<{ players: KnownPlayer[] }>('/api/admin/players'), 5000, []);
+  const api = useApi();
+  const list = usePoll(() => api.get<{ players: KnownPlayer[] }>(`/api/v1/servers/${serverId}/players`), 5000, [api, serverId]);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<{ tone: 'signal' | 'danger'; text: string } | null>(null);
   const running = state === 'running';
@@ -41,7 +45,7 @@ export function PlayersPanel({
   // Some modpacks wait for an operator to set up the world, so OP is one click away.
   const toggleOp = (p: KnownPlayer) =>
     run(`op:${p.uuid}`, async () => {
-      await post('/api/admin/server/command', { command: `${p.op ? 'deop' : 'op'} ${p.name}` });
+      await api.post(`/api/v1/servers/${serverId}/command`, { command: `${p.op ? 'deop' : 'op'} ${p.name}` });
       return p.op ? `${p.name} már nem operátor.` : `${p.name} operátor lett.`;
     });
 
@@ -54,7 +58,7 @@ export function PlayersPanel({
     );
     if (!ok) return;
     run(`reset:${p.uuid}`, async () => {
-      const { deleted } = await post<{ deleted: string[] }>(`/api/admin/players/${p.uuid}/reset`);
+      const { deleted } = await api.post<{ deleted: string[] }>(`/api/v1/servers/${serverId}/players/${p.uuid}/reset`);
       return `${p.name} visszaállítva: ${deleted.length} fájl törölve. Következő belépéskor tiszta lappal indul.`;
     });
   };
