@@ -1,27 +1,31 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { hostname } from 'node:os';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseEnv } from 'node:util';
 
 export const backendDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-export const envFile = resolve(backendDir, '.env');
+// LMS_ENV_FILE points the tests at a throwaway file.
+export const envFile = resolve(process.env.LMS_ENV_FILE || resolve(backendDir, '.env'));
 if (existsSync(envFile)) process.loadEnvFile(envFile);
 
 const env = (key: string, fallback = '') => process.env[key]?.trim() || fallback;
 
+// .env holds only the two secrets. Everything else is set from the panel and saved in data/settings.json.
 export const config = {
-  port: Number(env('PORT', '8765')),
-  host: env('HOST', '127.0.0.1'),
   dataDir: resolve(backendDir, env('DATA_DIR', '../data')),
   adminPassword: env('ADMIN_PASSWORD'),
   curseforgeApiKey: env('CURSEFORGE_API_KEY'),
-  panelName: env('PANEL_NAME', hostname()),
+};
+
+/**
+ * Settings older versions read from .env. They are copied into settings.json once (see store.ts)
+ * and ignored afterwards, so they can be deleted from .env.
+ */
+export const legacyEnv = {
+  port: Number(env('PORT')) || null,
+  panelName: env('PANEL_NAME'),
   gameAddress: env('PUBLIC_GAME_ADDRESS'),
-  allowedOrigins: env('ALLOWED_ORIGINS', 'https://zyzythepizi.github.io,http://localhost:5173')
-    .split(',')
-    .map((s) => s.trim().replace(/\/$/, ''))
-    .filter(Boolean),
+  allowedOrigins: env('ALLOWED_ORIGINS'),
 };
 
 export const MIN_PASSWORD_LENGTH = 10;
@@ -55,15 +59,40 @@ export function reloadEnv() {
   return changed;
 }
 
+/** Sets one key in .env, keeping every other line (and comments) as they are. */
+export function writeEnvValue(key: string, value: string) {
+  const text = existsSync(envFile) ? readFileSync(envFile, 'utf8') : '';
+  const lines = text.split(/\r?\n/);
+  // Single quotes keep $ and # literal; a value with a single quote falls back to double quotes.
+  const quoted = value.includes("'") ? JSON.stringify(value) : `'${value}'`;
+  const line = `${key}=${quoted}`;
+  const at = lines.findIndex((l) => new RegExp(`^\\s*${key}\\s*=`).test(l));
+  if (at >= 0) lines[at] = line;
+  else {
+    while (lines.length && lines[lines.length - 1] === '') lines.pop();
+    lines.push(line);
+  }
+  writeFileSync(envFile, `${lines.join('\n')}\n`);
+}
+
 export const paths = {
   instances: resolve(config.dataDir, 'instances'),
   java: resolve(config.dataDir, 'java'),
   tmp: resolve(config.dataDir, 'tmp'),
   settings: resolve(config.dataDir, 'settings.json'),
   secret: resolve(config.dataDir, 'secret.key'),
+  nodeKey: resolve(config.dataDir, 'node.key'),
+  sessions: resolve(config.dataDir, 'sessions.json'),
+  invites: resolve(config.dataDir, 'invites.json'),
+  audit: resolve(config.dataDir, 'audit.log'),
+  lock: resolve(config.dataDir, '.lock'),
 };
 
-export const USER_AGENT = 'ZyzyThePizi/Local-Minecraft-Server/1.0 (+https://github.com/ZyzyThePizi/Local-Minecraft-Server)';
+export const VERSION = '2.0.0';
+/** Bumped when the hub and the backend stop understanding each other. */
+export const API_VERSION = 1;
+
+export const USER_AGENT = `ZyzyThePizi/Local-Minecraft-Server/${VERSION} (+https://github.com/ZyzyThePizi/Local-Minecraft-Server)`;
 
 /** Error with an HTTP status and a stable code the UI can react to. */
 export class HttpError extends Error {

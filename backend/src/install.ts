@@ -11,8 +11,7 @@ import { readProperties, writeProperties } from './properties.ts';
 import type { InstalledPack } from './providers/common.ts';
 import * as curseforge from './providers/curseforge.ts';
 import * as modrinth from './providers/modrinth.ts';
-import { server } from './server.ts';
-import { getSettings, instanceDir, newInstanceId, saveInstance, serverDir, updateSettings, type Instance, type Source } from './store.ts';
+import { instanceDir, listInstances, newInstanceId, saveInstance, serverDir, type Instance, type Source } from './store.ts';
 
 export interface InstallRequest {
   source: Source;
@@ -54,7 +53,16 @@ export function startInstall(req: InstallRequest) {
 
       ctx.stage('Szerver előkészítése');
       const propsFile = join(dir, 'server.properties');
-      if (!(await readProperties(propsFile)).motd) await writeProperties(propsFile, { motd: pack.name.slice(0, 59) });
+      const props = await readProperties(propsFile);
+      // Every server gets its own game port, so several can run side by side (each with its own tunnel).
+      const used = new Set<number>();
+      for (const other of await listInstances()) {
+        used.add(Number((await readProperties(join(serverDir(other.id), 'server.properties')))['server-port']) || 25565);
+      }
+      let port = Number(props['server-port']) || 25565;
+      while (used.has(port)) port++;
+      await writeProperties(propsFile, { 'server-port': String(port), ...(props.motd ? {} : { motd: pack.name.slice(0, 59) }) });
+      ctx.log(`Játékport: ${port}`);
 
       const instance: Instance = {
         id,
@@ -74,13 +82,8 @@ export function startInstall(req: InstallRequest) {
         memoryMb: recommendedMemory(pack.loader !== 'vanilla'),
       };
       await saveInstance(instance);
-
-      // Switch to the new server unless another one is running right now.
-      const settings = await getSettings();
-      const activated = !server.isActive() || !settings.activeInstanceId;
-      if (activated) await updateSettings({ activeInstanceId: id });
       ctx.log(`Kész: ${pack.name} (${pack.mcVersion}, ${pack.loader})`);
-      return { instanceId: id, activated };
+      return { instanceId: id };
     } catch (err) {
       await rm(instanceDir(id), { recursive: true, force: true, maxRetries: 3 });
       throw err;

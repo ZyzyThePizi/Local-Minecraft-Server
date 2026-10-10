@@ -2,9 +2,12 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
+import { totalmem } from 'node:os';
 import { HttpError } from './config.ts';
 import { ensureJava } from './java.ts';
-import { getSettings, serverDir, type Instance } from './store.ts';
+import { findFreePort, isPortFree } from './ports.ts';
+import { readProperties, writeProperties } from './properties.ts';
+import { serverDir, settings, type Instance } from './store.ts';
 
 export type ServerState = 'stopped' | 'starting' | 'running' | 'stopping' | 'crashed';
 
@@ -16,16 +19,30 @@ const JOINED = /\]: ([A-Za-z0-9_]{3,16}) joined the game$/;
 const LEFT = /\]: ([A-Za-z0-9_]{3,16}) left the game$/;
 const DONE = /\]: Done \([\d.,]+s\)!/;
 
-class ServerManager {
+/** Memory all servers on this machine may use together. */
+export function ramBudgetMb() {
+  const total = Math.floor(totalmem() / 1048576);
+  return settings().maxRamMb ?? Math.max(1024, total - 2048);
+}
+
+/** One Minecraft server process. Every installed server has its own, so several can run at once. */
+class ServerProcess {
+  readonly instanceId: string;
   state: ServerState = 'stopped';
-  instanceId: string | null = null;
   startedAt: number | null = null;
+  /** Memory (-Xmx) and game port of the current run. */
+  memoryMb = 0;
+  port: number | null = null;
   players = new Set<string>();
   private proc: ChildProcessWithoutNullStreams | null = null;
   private lines: { seq: number; line: string }[] = [];
   private seq = 0;
   private stopTimer: NodeJS.Timeout | null = null;
   private exitWaiters: (() => void)[] = [];
+
+  constructor(instanceId: string) {
+    this.instanceId = instanceId;
+  }
 
   isActive() {
     return this.state === 'starting' || this.state === 'running' || this.state === 'stopping';
@@ -55,18 +72,51 @@ class ServerManager {
   /** Validates and returns quickly; the launch itself (which may download Java first) runs in the background. */
   async start(inst: Instance) {
     if (this.isActive()) throw new HttpError(409, 'ALREADY_RUNNING', 'A szerver már fut.');
-    if (!(await getSettings()).eulaAccepted) {
+    if (!settings().eulaAccepted) {
       throw new HttpError(409, 'EULA_REQUIRED', 'Indítás előtt el kell fogadni a Minecraft EULA-t.');
     }
+    const others = servers.active().filter((s) => s !== this);
+    const reserved = others.reduce((sum, s) => sum + s.memoryMb, 0);
+    const budget = ramBudgetMb();
+    if (reserved + inst.memoryMb > budget) {
+      throw new HttpError(
+        409,
+        'RAM_BUDGET',
+        `Nincs elég memória a keretben: a futó szerverek ${reserved} MB-ot foglalnak, ez a szerver ${inst.memoryMb} MB-ot kérne, a keret ${budget} MB. ` +
+          'Állíts le egy szervert, csökkentsd a memóriáját, vagy emeld a keretet a Gép fülön.',
+      );
+    }
     this.state = 'starting';
-    this.instanceId = inst.id;
     this.startedAt = Date.now();
+    this.memoryMb = inst.memoryMb;
     this.players.clear();
     this.panel(`${inst.name} indítása…`);
+    try {
+      this.port = await this.claimPort(new Set(others.map((s) => s.port).filter((p): p is number => p !== null)));
+    } catch (err) {
+      this.state = 'crashed';
+      throw err;
+    }
     this.launch(inst).catch((err: unknown) => {
       this.state = 'crashed';
+      this.memoryMb = 0;
       this.panel(`Indítási hiba: ${err instanceof Error ? err.message : err}`);
     });
+  }
+
+  /**
+   * The game port from server.properties, moved to a free one when another server (here or in
+   * another backend on this machine) already listens there.
+   */
+  private async claimPort(taken: Set<number>) {
+    const file = join(serverDir(this.instanceId), 'server.properties');
+    const current = Number((await readProperties(file))['server-port']) || 25565;
+    if (!taken.has(current) && (await isPortFree(current))) return current;
+    const next = await findFreePort(25565, taken);
+    await writeProperties(file, { 'server-port': String(next) });
+    this.panel(`A ${current}-es port foglalt, ez a szerver mostantól a ${next}-es portot használja.`);
+    this.panel(`A playit.gg tunnelt is állítsd át erre: 127.0.0.1:${next}`);
+    return next;
   }
 
   private async launch(inst: Instance) {
@@ -98,9 +148,10 @@ class ServerManager {
     const expected = this.state === 'stopping' || code === 0;
     this.state = expected ? 'stopped' : 'crashed';
     this.panel(expected ? 'A szerver leállt.' : `A szerver összeomlott (kilépési kód: ${code}). Nézd meg a fenti naplót.`);
-    if (!expected && this.instanceId && this.startedAt) void this.explainCrash(serverDir(this.instanceId), this.startedAt);
+    if (!expected && this.startedAt) void this.explainCrash(serverDir(this.instanceId), this.startedAt);
     this.proc = null;
     this.startedAt = null;
+    this.memoryMb = 0;
     this.players.clear();
     for (const resolveWait of this.exitWaiters.splice(0)) resolveWait();
   }
@@ -131,6 +182,7 @@ class ServerManager {
     if (!proc) {
       if (this.isActive()) this.panel('Indítás megszakítva.');
       this.state = 'stopped';
+      this.memoryMb = 0;
       return Promise.resolve();
     }
     const exited = new Promise<void>((r) => this.exitWaiters.push(r));
@@ -159,4 +211,22 @@ class ServerManager {
   }
 }
 
-export const server = new ServerManager();
+const processes = new Map<string, ServerProcess>();
+
+export type { ServerProcess };
+
+export const servers = {
+  /** The process slot of an installed server (created on first use). */
+  get(instanceId: string) {
+    let p = processes.get(instanceId);
+    if (!p) {
+      p = new ServerProcess(instanceId);
+      processes.set(instanceId, p);
+    }
+    return p;
+  },
+  peek: (instanceId: string) => processes.get(instanceId) ?? null,
+  active: () => [...processes.values()].filter((p) => p.isActive()),
+  forget: (instanceId: string) => processes.delete(instanceId),
+  reservedMb: () => [...processes.values()].reduce((sum, p) => sum + (p.isActive() ? p.memoryMb : 0), 0),
+};

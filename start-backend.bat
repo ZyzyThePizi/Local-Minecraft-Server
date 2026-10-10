@@ -12,22 +12,10 @@ echo.
 where node >nul 2>&1
 if errorlevel 1 goto :nonode
 
-if exist node_modules goto :funnel
+if exist node_modules goto :playit
 echo   Első indítás: függőségek telepítése...
 call npm install --no-audit --no-fund
 if errorlevel 1 goto :npmfail
-
-:funnel
-rem Publikus HTTPS cím a backendnek. Ha már be van állítva, nem változtat semmin.
-where tailscale >nul 2>&1
-if errorlevel 1 goto :playit
-tailscale funnel --bg --https=10000 http://127.0.0.1:8765 >nul 2>&1
-if errorlevel 1 goto :funnelfail
-echo   Tailscale Funnel: bekapcsolva a 10000-es porton.
-goto :playit
-
-:funnelfail
-echo   [FIGYELEM] A Tailscale Funnel nem állt be. Fut a Tailscale, és be vagy jelentkezve?
 
 :playit
 rem A játékforgalom tunnelje (playit.gg). Ha nincs telepítve, letölti és telepíti; ha nem fut, elindítja.
@@ -45,7 +33,7 @@ msiexec /i "%PLAYITMSI%" /passive
 if not exist "%PLAYIT%" goto :playitfail
 del "%PLAYITMSI%" >nul 2>&1
 echo   A playit.gg telepítve. Egy új ablakban párosítsd a fiókoddal (a kiírt linket nyisd meg),
-echo   majd a playit.gg oldalán hozz létre egy "Minecraft Java" tunnelt a 127.0.0.1:25565-re.
+echo   majd a playit.gg oldalán hozz létre szerverenként egy "Minecraft Java" tunnelt (a portot a panel mutatja).
 start "playit.gg beállítás" "%PLAYIT%" setup
 goto :run
 
@@ -67,6 +55,7 @@ goto :run
 echo   [FIGYELEM] A playit.gg telepítése nem sikerült. Kézzel: https://playit.gg/download
 
 :run
+rem A Tailscale Funnel címet (és ha kell, a szabad portot) a backend maga állítja be indításkor.
 echo   Panel: https://zyzythepizi.github.io/Local-Minecraft-Server/
 echo   Ezt az ablakot hagyd nyitva, amíg a szerver kell. Leállítás: Ctrl+C
 echo.

@@ -2,7 +2,8 @@ import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { config, paths } from './config.ts';
+import { hostname } from 'node:os';
+import { config, legacyEnv, paths } from './config.ts';
 
 export type Loader = 'vanilla' | 'forge' | 'neoforge' | 'fabric' | 'quilt';
 export type Source = 'curseforge' | 'modrinth' | 'vanilla';
@@ -25,14 +26,34 @@ export interface Instance {
   launch: Launch;
   memoryMb: number;
   jvmArgs?: string;
+  /** Start this server together with the backend. */
+  autoStart?: boolean;
+  /** Join address handed to players, e.g. this server's playit.gg tunnel. */
+  gameAddress?: string;
 }
 
 export interface Settings {
+  /** Name of this machine in the hub. */
+  panelName: string;
   eulaAccepted: boolean;
-  activeInstanceId: string | null;
-  autoStart: boolean;
-  gameAddress: string;
+  /** Local port of the API; moved automatically when another backend already uses it. */
+  apiPort: number;
+  /** Pages allowed to call the API from a browser. */
+  allowedOrigins: string[];
+  /** Memory all running servers may use together, in MB. null = the whole machine minus 2 GB. */
+  maxRamMb: number | null;
+  /** Whether anyone (without a password) may see which servers run here and their join addresses. */
+  publicStatus: boolean;
+  /** The address the hub uses. Empty = the Tailscale Funnel address found at startup. */
+  publicUrl: string;
+  /** Expose the API through Tailscale Funnel on port 10000 (a sub-path when another backend already has the root). */
+  funnel: { enabled: boolean; path: string };
+  /** Opt-in heartbeat to the network registry (no passwords or player names are sent). */
+  registry: { enabled: boolean; url: string };
 }
+
+export const DEFAULT_ORIGINS = ['https://zyzythepizi.github.io', 'http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:4173'];
+export const DEFAULT_REGISTRY_URL = '';
 
 export async function readJson<T>(file: string, fallback: T): Promise<T> {
   try {
@@ -52,20 +73,65 @@ export async function writeJson(file: string, data: unknown) {
 // ---- settings ----
 
 const defaultSettings = (): Settings => ({
+  panelName: hostname(),
   eulaAccepted: false,
-  activeInstanceId: null,
-  autoStart: false,
-  gameAddress: config.gameAddress,
+  apiPort: 8765,
+  allowedOrigins: DEFAULT_ORIGINS,
+  maxRamMb: null,
+  publicStatus: true,
+  publicUrl: '',
+  funnel: { enabled: true, path: '/' },
+  registry: { enabled: false, url: DEFAULT_REGISTRY_URL },
 });
 
+let cached: Settings | null = null;
+
+/** Loads settings.json, moving over what version 1 kept in .env or in the global settings. */
+export async function initSettings() {
+  const raw = await readJson<Record<string, unknown>>(paths.settings, {});
+  const migrated = 'activeInstanceId' in raw || 'autoStart' in raw || 'gameAddress' in raw;
+  if (migrated) {
+    // Version 1 had one active server; its autostart flag and join address now belong to that server.
+    const inst = await getInstance(raw.activeInstanceId as string | null);
+    const address = (raw.gameAddress as string | undefined) || legacyEnv.gameAddress;
+    if (inst) {
+      if (raw.autoStart === true) inst.autoStart = true;
+      if (address && !inst.gameAddress) inst.gameAddress = address;
+      await saveInstance(inst);
+    }
+    delete raw.activeInstanceId;
+    delete raw.autoStart;
+    delete raw.gameAddress;
+    if (legacyEnv.panelName) raw.panelName = legacyEnv.panelName;
+    if (legacyEnv.port) raw.apiPort = legacyEnv.port;
+    if (legacyEnv.allowedOrigins) {
+      raw.allowedOrigins = [...new Set([...legacyEnv.allowedOrigins.split(','), ...DEFAULT_ORIGINS].map((s) => s.trim().replace(/\/$/, '')).filter(Boolean))];
+    }
+  }
+  cached = { ...defaultSettings(), ...(raw as Partial<Settings>) };
+  if (migrated || !existsSync(paths.settings)) await saveSettings(cached);
+  return { settings: cached, migrated };
+}
+
+/** In-memory copy, kept in sync by updateSettings. */
+export function settings(): Settings {
+  if (!cached) throw new Error('settings not loaded');
+  return cached;
+}
+
+async function saveSettings(next: Settings) {
+  await mkdir(config.dataDir, { recursive: true });
+  await writeJson(paths.settings, next);
+}
+
 export async function getSettings(): Promise<Settings> {
-  return { ...defaultSettings(), ...(await readJson<Partial<Settings>>(paths.settings, {})) };
+  return settings();
 }
 
 export async function updateSettings(patch: Partial<Settings>) {
-  const next = { ...(await getSettings()), ...patch };
-  await mkdir(config.dataDir, { recursive: true });
-  await writeJson(paths.settings, next);
+  const next = { ...settings(), ...patch };
+  await saveSettings(next);
+  cached = next;
   return next;
 }
 
