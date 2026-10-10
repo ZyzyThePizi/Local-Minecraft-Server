@@ -273,7 +273,8 @@ app.patch('/api/v1/node', async (c) => {
   if (input.registry !== undefined) {
     const r = input.registry as { enabled?: unknown; url?: unknown };
     const url = str(r?.url, 200).replace(/\/$/, '');
-    if (typeof r?.enabled !== 'boolean' || (url && !/^https:\/\/[^\s]+$/.test(url))) throw bad('Hibás hálózati beállítás.');
+    const okUrl = /^https:\/\/\S+$/.test(url) || /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/\S*)?$/.test(url);
+    if (typeof r?.enabled !== 'boolean' || (url && !okUrl)) throw bad('Hibás hálózati beállítás (https:// cím kell).');
     if (r.enabled && !url) throw bad('A hálózat címe hiányzik.');
     patch.registry = { enabled: r.enabled, url };
     changed.push(`hálózat: ${r.enabled ? 'be' : 'ki'}`);
