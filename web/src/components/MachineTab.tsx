@@ -36,7 +36,7 @@ export function MachineTab({ overview, refresh }: { overview: NodeOverview; refr
       <div className="space-y-5 lg:col-span-5">
         <MachineSettings key={overview.settings.panelName} overview={overview} refresh={refresh} />
         <PasswordPanel />
-        <NetworkPanel overview={overview} refresh={refresh} />
+        <NetworkPanel overview={overview} />
       </div>
       <div className="space-y-5 lg:col-span-7">
         <InvitesPanel overview={overview} />
@@ -201,32 +201,33 @@ function PasswordPanel() {
   );
 }
 
-function NetworkPanel({ overview, refresh }: { overview: NodeOverview; refresh: () => void }) {
-  const { client } = useNode();
-  const reg = overview.settings.registry;
-  const [url, setUrl] = useState(reg.url);
-  const action = useAction();
-  const save = (enabled: boolean) =>
-    action.run('reg', async () => {
-      await client.patch('/api/v1/node', { registry: { enabled, url } });
-      refresh();
-    });
+/** Every machine reports to the network; this panel says so plainly and shows exactly what is shared. */
+function NetworkPanel({ overview }: { overview: NodeOverview }) {
   const r = overview.registry;
   return (
     <Panel>
-      <PanelTitle aside={reg.enabled && <Chip tone={r.lastError ? 'warn' : 'signal'}>{r.lastError ? 'Hiba' : r.lastOkAt ? 'Kapcsolódva' : 'Indul'}</Chip>}>Hálózat</PanelTitle>
+      <PanelTitle aside={<Chip tone={r.lastError ? 'warn' : 'signal'}>{r.lastError ? 'Nem érhető el' : r.lastOkAt ? 'Kapcsolódva' : 'Indul'}</Chip>}>Hálózat</PanelTitle>
       <p className="text-sm text-fg-muted">
-        Opcionális: a gép ötpercenként, változáskor (szerver indul vagy leáll, játékos lép be) pedig pár másodpercen belül aláírt jelet küld a hálózat nyilvántartásának, és onnan kapja a
-        bejelentéseket és a frissítési figyelmeztetéseket. Csak a gép azonosítója, neve,
-        verziója és a szerverek, játékosok száma megy át. Jelszó, cím vagy játékosnév soha.
+        Ez a gép a hálózat része: ötpercenként, változáskor (szerver indul vagy leáll, játékos lép be) pedig pár másodpercen belül aláírt jelet küld a hálózat nyilvántartásának. Ez nem
+        kapcsolható ki. Onnan kapja a bejelentéseket és a frissítési figyelmeztetéseket.
       </p>
+      <dl className="mt-4 grid gap-px border border-line bg-line text-sm sm:grid-cols-2">
+        <div className="bg-surface px-4 py-3">
+          <dt className="label">Amit a hálózat tulajdonosa lát</dt>
+          <dd className="mt-1.5 text-fg-muted">A gép neve, azonosítója és verziója. Szerverenként a név, a Minecraft verzió, a loader, az állapot és a játékosok száma.</dd>
+        </div>
+        <div className="bg-surface px-4 py-3">
+          <dt className="label">Ami soha nem megy át</dt>
+          <dd className="mt-1.5 text-fg-muted">Jelszó, belépési token, a gép vagy a szerverek címe, játékosnevek, konzol, fájlok. A gépedhez ettől senki nem fér hozzá.</dd>
+        </div>
+      </dl>
       <div className="mt-4 space-y-4">
-        <Field label="Nyilvántartás címe" hint={r.defaultUrl ? 'Üresen hagyva a hálózat alapértelmezett nyilvántartását használja.' : undefined}>
-          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={r.defaultUrl || 'https://…'} className={`${inputClass} font-mono`} spellCheck={false} />
-        </Field>
-        <Toggle checked={reg.enabled} onChange={(v) => save(v)} label="Részvétel a hálózatban" />
-        {reg.enabled && r.lastError && <Notice tone="warn">Utolsó hiba: {r.lastError}</Notice>}
-        {action.message && <Notice tone={action.message.tone}>{action.message.text}</Notice>}
+        {r.url && (
+          <p className="text-xs text-fg-faint">
+            Nyilvántartás: <span className="readout break-all">{r.url}</span>
+          </p>
+        )}
+        {r.lastError && <Notice tone="warn">A nyilvántartás most nem érhető el ({r.lastError}). A gép ettől függetlenül működik, és később újrapróbálja.</Notice>}
         {r.announcements.map((a) => (
           <Notice key={a.id} tone={a.level === 'critical' ? 'danger' : a.level === 'warn' ? 'warn' : 'info'}>
             <strong className="font-semibold">{a.title}</strong> {a.body}

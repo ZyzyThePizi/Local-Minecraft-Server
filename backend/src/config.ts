@@ -88,7 +88,7 @@ export const paths = {
   lock: resolve(config.dataDir, '.lock'),
 };
 
-export const VERSION = '2.0.0';
+export const VERSION = '2.1.0';
 /** Bumped when the hub and the backend stop understanding each other. */
 export const API_VERSION = 1;
 

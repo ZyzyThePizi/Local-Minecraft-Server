@@ -1,13 +1,17 @@
+import { join } from 'node:path';
 import { onChange } from './changes.ts';
 import { API_VERSION, VERSION } from './config.ts';
 import { nodeId, publicKey, signBytes } from './node.ts';
+import { readProperties } from './properties.ts';
 import { servers } from './servers.ts';
-import { DEFAULT_REGISTRY_URL, listInstances, settings } from './store.ts';
+import { DEFAULT_REGISTRY_URL, listInstances, serverDir, settings } from './store.ts';
 
 /**
- * Opt-in heartbeat to the network registry (the private control panel reads it).
- * It carries no password, token, address or player name: only this machine's id and public key,
- * its name, version and how many servers and players it has. The body is signed with the machine key.
+ * Heartbeat to the network registry, which the network owner's control panel reads.
+ * Every machine in the network reports; there is no switch for it. What is sent, and nothing else:
+ * this machine's id and public key, its name and version, and for each server its name, Minecraft
+ * version, loader, state and player count. Never a password, token, address or player name.
+ * The body is signed with the machine key.
  */
 
 export interface Announcement {
@@ -28,14 +32,18 @@ export interface RegistryState {
 
 export const registryState: RegistryState = { lastOkAt: null, lastError: null, announcements: [], minVersion: null, flags: {} };
 
+/**
+ * Where beats go. LMS_REGISTRY_URL is for development and tests only: it points a scratch backend at
+ * a local registry, and an empty value keeps it from reporting to the real one.
+ */
+export const REGISTRY_URL = (process.env.LMS_REGISTRY_URL ?? DEFAULT_REGISTRY_URL).replace(/\/$/, '');
+
 const INTERVAL_MS = 5 * 60 * 1000;
 /** After a visible change (server started, player joined…) the next beat goes out this soon, batching bursts. */
 const CHANGE_DELAY_MS = 2000;
+const MAX_SERVERS = 50;
 let timer: NodeJS.Timeout | null = null;
 let soon: NodeJS.Timeout | null = null;
-
-/** The address beats go to: the one set on the panel, or the network's default. */
-export const registryUrl = () => settings().registry.url || DEFAULT_REGISTRY_URL;
 const seen = new Set<string>();
 
 const newer = (a: string, b: string) => {
@@ -46,10 +54,23 @@ const newer = (a: string, b: string) => {
 };
 
 export async function heartbeat() {
-  const url = registryUrl();
-  if (!settings().registry.enabled || !url) return;
+  if (!REGISTRY_URL) return;
   const instances = await listInstances();
   const active = servers.active();
+  const serverList = await Promise.all(
+    instances.slice(0, MAX_SERVERS).map(async (i) => {
+      const proc = servers.peek(i.id);
+      const props = await readProperties(join(serverDir(i.id), 'server.properties')).catch(() => ({}) as Record<string, string>);
+      return {
+        name: i.name.slice(0, 80),
+        mcVersion: i.mcVersion.slice(0, 20),
+        loader: i.loader,
+        state: proc?.state ?? 'stopped',
+        players: proc?.players.size ?? 0,
+        maxPlayers: Number(props['max-players'] ?? 20) || 20,
+      };
+    }),
+  );
   const body = JSON.stringify({
     nodeId,
     publicKey: publicKey(),
@@ -59,10 +80,11 @@ export async function heartbeat() {
     servers: instances.length,
     running: active.length,
     players: active.reduce((n, s) => n + s.players.size, 0),
+    serverList,
     t: Date.now(),
   });
   try {
-    const res = await fetch(`${url.replace(/\/$/, '')}/v1/heartbeat`, {
+    const res = await fetch(`${REGISTRY_URL}/v1/heartbeat`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-lms-signature': signBytes(body) },
       body,
@@ -98,11 +120,11 @@ onChange(() => {
   soon.unref();
 });
 
-/** (Re)starts the heartbeat loop; call after the registry setting changes. */
+/** Starts the heartbeat loop. */
 export function startRegistry() {
   if (timer) clearInterval(timer);
   timer = null;
-  if (!settings().registry.enabled) return;
+  if (!REGISTRY_URL) return;
   void heartbeat();
   timer = setInterval(() => void heartbeat(), INTERVAL_MS);
   timer.unref();

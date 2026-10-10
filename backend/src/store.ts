@@ -49,12 +49,10 @@ export interface Settings {
   publicUrl: string;
   /** Expose the API through Tailscale Funnel on port 10000 (a sub-path when another backend already has the root). */
   funnel: { enabled: boolean; path: string };
-  /** Opt-in heartbeat to the network registry (no passwords or player names are sent). */
-  registry: { enabled: boolean; url: string };
 }
 
 export const DEFAULT_ORIGINS = ['https://zyzythepizi.github.io', 'http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:4173'];
-/** The network registry a machine reports to when it opts in and no other address is set. */
+/** The network registry every machine reports to (see registry.ts for what is sent). */
 export const DEFAULT_REGISTRY_URL = 'https://18749.tail9baec1.ts.net:10000/registry';
 
 export async function readJson<T>(file: string, fallback: T): Promise<T> {
@@ -83,7 +81,6 @@ const defaultSettings = (): Settings => ({
   publicStatus: true,
   publicUrl: '',
   funnel: { enabled: true, path: '/' },
-  registry: { enabled: false, url: DEFAULT_REGISTRY_URL },
 });
 
 let cached: Settings | null = null;

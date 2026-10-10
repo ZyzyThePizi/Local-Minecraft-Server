@@ -81,7 +81,7 @@ port, so several can run at once.
    prints the machine's public address and a link that adds it to the hub. The window stays open while the backend runs.
 3. **`backend/.env` holds only two secrets:** `ADMIN_PASSWORD` and the optional `CURSEFORGE_API_KEY='…'` (inside single
    quotes; <https://console.curseforge.com/> → *API Keys*; Modrinth works without it). Changes take effect on save.
-   Everything else (machine name, RAM budget, public status, addresses, allowed pages, network) is set in the panel under
+   Everything else (machine name, RAM budget, public status, addresses, allowed pages) is set in the panel under
    **Gép** and saved to `data/settings.json`. Settings an older version kept in `.env` are moved there on the first start.
 4. **Public address.** With Tailscale installed and logged in, the backend publishes itself with Funnel on port 10000.
    A second backend on the same PC (started from another folder) gets its own sub-path and the next free local port.
@@ -129,12 +129,26 @@ switched on start together with the backend.
 - Modpack paths and zips are validated: symlinks and paths that point outside the server folder are never extracted.
 - `backend/.env` and `data/` are not in git.
 
-### Network (optional)
+### Network (every backend reports)
 
-Under *Gép → Hálózat* (machine → network) a backend can opt in to a registry: every five minutes it sends a heartbeat
-signed with its machine key and gets announcements and the minimum recommended version back. The heartbeat carries the
-machine id, name, version and the number of servers and players, never a password, address or player name. The
-registry and the owner's admin panel live in a separate private repository.
+Every backend is part of the network and reports to its registry. **This cannot be switched off in the panel**, so read
+this before you run a backend:
+
+- **When:** every five minutes, and within a few seconds of a visible change (a server starts or stops, a player joins or
+  leaves, a server is added or removed, the machine is renamed).
+- **What the network owner sees:** the machine's id, public key, name and version, and for each server its name,
+  Minecraft version, loader, state and player count.
+- **What is never sent:** passwords, sign-in tokens, the machine's or the servers' addresses, player names, console
+  output, files. The registry cannot reach your machine or change anything on it; it only stores what backends send.
+- **What comes back:** the network's announcements and the minimum recommended backend version.
+
+The beat is signed with the machine key. The panel shows the same summary and the connection state under
+*Gép → Hálózat* (machine → network), and the backend prints it at startup. The code is in
+[`backend/src/registry.ts`](backend/src/registry.ts). The registry and the owner's admin panel live in a separate
+private repository.
+
+For development, `LMS_REGISTRY_URL` points a scratch backend at a local registry; set it to an empty value to keep a
+test backend from reporting to the real one.
 
 ## Development
 

@@ -8,7 +8,7 @@ import { config, envFile, MIN_PASSWORD_LENGTH, paths, reloadEnv, VERSION, writeE
 import { exposeViaFunnel } from './funnel.ts';
 import { initNode, nodeId, shortId } from './node.ts';
 import { findFreePort, isPortFree } from './ports.ts';
-import { startRegistry } from './registry.ts';
+import { REGISTRY_URL, startRegistry } from './registry.ts';
 import { servers } from './servers.ts';
 import { initSessions } from './sessions.ts';
 import { initSettings, listInstances, removeIncompleteInstances, settings, updateSettings } from './store.ts';
@@ -98,7 +98,12 @@ const httpServer = serve({ fetch: fetchWithPrefix, port, hostname: '127.0.0.1' }
   } else {
     console.log('\n  Nincs nyilvános cím: a panel csak ezen a gépen éri el (http://127.0.0.1). Tailscale-lel automatikus.');
   }
-  console.log('  A jelszót és a CurseForge kulcsot a backend/.env-ben módosíthatod, minden mást a panelen.\n');
+  console.log('  A jelszót és a CurseForge kulcsot a backend/.env-ben módosíthatod, minden mást a panelen.');
+  if (REGISTRY_URL) {
+    console.log('  Hálózat: ez a gép jelentkezik a hálózat nyilvántartásánál (gépnév, verzió, a szerverek neve, állapota és játékosszáma).');
+    console.log('  Jelszó, cím és játékosnév nem megy át.');
+  }
+  console.log('');
   void autoStart();
 });
 
