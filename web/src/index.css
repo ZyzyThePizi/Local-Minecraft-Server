@@ -161,3 +161,14 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* Item-tooltip look from the game, for the command hints: near-black purple with a violet frame. */
+@utility mc-tip {
+  background: rgb(16 0 16 / 0.96);
+  border: 2px solid transparent;
+  border-image: linear-gradient(180deg, #5000ff, #28007f) 1;
+  box-shadow:
+    0 0 0 2px rgb(16 0 16 / 0.96),
+    0 12px 32px rgb(0 0 0 / 0.5);
+  font-family: var(--font-mono);
+}

@@ -1,6 +1,7 @@
 import { ChevronDown, Play } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useApi } from '../hub/HubProvider';
+import { useT } from '../i18n';
 import type { Job } from '../types';
 import { Button } from './ui';
 
@@ -16,6 +17,7 @@ export function JobProgress({
   onDismiss: () => void;
 }) {
   const api = useApi();
+  const t = useT();
   const [job, setJob] = useState(initial);
   const [showLog, setShowLog] = useState(false);
 
@@ -39,17 +41,17 @@ export function JobProgress({
     <section className={`brackets glass animate-rise border ${tone}`}>
       <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3 sm:px-6">
         <span className="label">
-          <span className="text-signal">●</span> Telepítés
+          <span className="text-signal">●</span> {t('Install', 'Telepítés')}
         </span>
         <span className={`readout text-sm ${job.state === 'error' ? 'text-danger' : 'text-signal'}`}>
-          {job.state === 'running' ? (pct === null ? '…' : `${pct}%`) : job.state === 'done' ? 'KÉSZ' : 'HIBA'}
+          {job.state === 'running' ? (pct === null ? '…' : `${pct}%`) : job.state === 'done' ? t('DONE', 'KÉSZ') : t('ERROR', 'HIBA')}
         </span>
       </div>
       <div className="px-5 py-5 sm:px-6">
         <p className="text-xl font-semibold tracking-tight">
-          {job.state === 'running' && `${job.title} telepítése`}
-          {job.state === 'done' && `${job.title} telepítve`}
-          {job.state === 'error' && 'A telepítés nem sikerült'}
+          {job.state === 'running' && t(`Installing ${job.title}`, `${job.title} telepítése`)}
+          {job.state === 'done' && t(`${job.title} is installed`, `${job.title} telepítve`)}
+          {job.state === 'error' && t('The install failed', 'A telepítés nem sikerült')}
         </p>
         <p className="mt-1 text-sm text-fg-muted">{job.state === 'error' ? job.error : job.stage}</p>
 
@@ -66,23 +68,23 @@ export function JobProgress({
           <div className="mt-5 flex flex-wrap items-center gap-2">
             {job.result?.instanceId && (
               <Button variant="primary" onClick={() => onStart(job.result!.instanceId)} icon={<Play className="size-4" />}>
-                Megnyitás
+                {t('Open', 'Megnyitás')}
               </Button>
             )}
             <Button variant="ghost" onClick={onDismiss}>
-              Bezárás
+              {t('Close', 'Bezárás')}
             </Button>
           </div>
         )}
         {job.state === 'error' && (
           <Button variant="ghost" onClick={onDismiss} className="mt-4">
-            Bezárás
+            {t('Close', 'Bezárás')}
           </Button>
         )}
 
         <button onClick={() => setShowLog((v) => !v)} className="label mt-4 inline-flex items-center gap-1 hover:text-fg">
           <ChevronDown className={`size-3.5 transition-transform ${showLog ? 'rotate-180' : ''}`} />
-          Részletek
+          {t('Details', 'Részletek')}
         </button>
         {showLog && (
           <pre className="mt-2 max-h-64 overflow-auto border border-line bg-bg/80 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-fg-muted">

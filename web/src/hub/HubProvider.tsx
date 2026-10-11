@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { tr } from '../i18n';
 import type { PublicServer, ServerState, ServerSummary } from '../types';
 import { ApiError, hello, NodeClient, normalizeUrl, sealTokens, type Hello, type Tokens } from './client';
 import { keyring, type NodeRecord } from './keyring';
@@ -130,7 +131,7 @@ export function HubProvider({ children }: { children: ReactNode }) {
       for (const s of servers) {
         const key = `${rec.nodeId}/${s.id}`;
         const before = lastStates.current.get(key);
-        if (before && before !== 'crashed' && s.state === 'crashed') notify('danger', `${rec.name}: a(z) „${s.name}” szerver összeomlott.`);
+        if (before && before !== 'crashed' && s.state === 'crashed') notify('danger', tr(`${rec.name}: the server “${s.name}” crashed.`, `${rec.name}: a(z) „${s.name}” szerver összeomlott.`));
         lastStates.current.set(key, s.state);
       }
     },
@@ -231,7 +232,7 @@ export function HubProvider({ children }: { children: ReactNode }) {
       },
       addNode: async (h, url, tokens, device) => {
         const existing = await keyring.get(h.nodeId);
-        if (existing && existing.publicKey !== h.publicKey) throw new ApiError(495, 'KEY_CHANGED', 'Ez a gép már szerepel a listádban, de más kulccsal.');
+        if (existing && existing.publicKey !== h.publicKey) throw new ApiError(495, 'KEY_CHANGED', tr('This machine is already on your list, but with a different key.', 'Ez a gép már szerepel a listádban, de más kulccsal.'));
         const rec: NodeRecord = existing
           ? { ...existing, url: normalizeUrl(url), name: h.name, lastSeenAt: Date.now() }
           : { nodeId: h.nodeId, publicKey: h.publicKey, url: normalizeUrl(url), name: h.name, addedAt: Date.now(), lastSeenAt: Date.now() };

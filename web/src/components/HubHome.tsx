@@ -3,16 +3,17 @@ import { useEffect, useState } from 'react';
 import { shortFingerprint } from '../hub/crypto';
 import { useHub, type HubNode, type Reach } from '../hub/HubProvider';
 import { relativeTime } from '../format';
+import { tx, useT, type Text } from '../i18n';
 import type { Announcement } from '../types';
 import { Button, Chip, Notice, Skeleton, StateDot } from './ui';
 
-const REACH: Record<Reach, { text: string; tone: string }> = {
-  checking: { text: 'Kapcsolódás…', tone: 'text-fg-faint' },
-  online: { text: 'Online', tone: 'text-signal' },
-  offline: { text: 'Alszik', tone: 'text-fg-muted' },
-  outdated: { text: 'Régi verzió', tone: 'text-warn' },
-  'key-changed': { text: 'Kulcs megváltozott', tone: 'text-danger' },
-  error: { text: 'Hiba', tone: 'text-danger' },
+const REACH: Record<Reach, { text: Text; tone: string }> = {
+  checking: { text: tx('Connecting…', 'Kapcsolódás…'), tone: 'text-fg-faint' },
+  online: { text: tx('Online', 'Online'), tone: 'text-signal' },
+  offline: { text: tx('Asleep', 'Alszik'), tone: 'text-fg-muted' },
+  outdated: { text: tx('Old version', 'Régi verzió'), tone: 'text-warn' },
+  'key-changed': { text: tx('Key changed', 'Kulcs megváltozott'), tone: 'text-danger' },
+  error: { text: tx('Error', 'Hiba'), tone: 'text-danger' },
 };
 
 const README = 'https://github.com/ZyzyThePizi/Local-Minecraft-Server#readme';
@@ -34,6 +35,7 @@ function useAnnouncements() {
 /** The archipelago overview: every machine this browser knows, as a list next to the 3D islands. */
 export function HubHome({ onOpen, onAdd, onKeyring }: { onOpen: (nodeId: string) => void; onAdd: () => void; onKeyring: () => void }) {
   const hub = useHub();
+  const t = useT();
   const announcements = useAnnouncements();
   const servers = hub.nodes.flatMap((n) => n.live.servers ?? []);
   const running = servers.filter((s) => s.state === 'running').length;
@@ -43,17 +45,20 @@ export function HubHome({ onOpen, onAdd, onKeyring }: { onOpen: (nodeId: string)
     <div className="brackets glass animate-rise border border-line">
       <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3 sm:px-7">
         <span className="label">
-          <span className="text-signal">[01]</span> Szigetvilág
+          <span className="text-signal">[01]</span> {t('Archipelago', 'Szigetvilág')}
         </span>
         <span className="label readout hidden sm:inline">
-          {hub.nodes.length} gép · {running} fut · {players} játékos
+          {t(`${hub.nodes.length} machines · ${running} running · ${players} players`, `${hub.nodes.length} gép · ${running} fut · ${players} játékos`)}
         </span>
       </div>
 
       <div className="px-5 pt-6 pb-5 sm:px-7">
-        <h1 className="text-display">Minden gép egy sziget</h1>
+        <h1 className="text-display">{t('Every machine is an island', 'Minden gép egy sziget')}</h1>
         <p className="mt-4 max-w-md text-fg-muted">
-          Minden saját gépen futó backend egy sziget, saját szerverekkel, modpackekkel és tunnelekkel. A gépeket csak ez a böngésző jegyzi meg; felhasználói fiók nincs.
+          {t(
+            'Every backend running on someone’s own machine is an island, with its own servers, modpacks and tunnels. Only this browser remembers the machines; there are no user accounts.',
+            'Minden saját gépen futó backend egy sziget, saját szerverekkel, modpackekkel és tunnelekkel. A gépeket csak ez a böngésző jegyzi meg; felhasználói fiók nincs.',
+          )}
         </p>
       </div>
 
@@ -74,7 +79,9 @@ export function HubHome({ onOpen, onAdd, onKeyring }: { onOpen: (nodeId: string)
         </div>
       ) : hub.nodes.length === 0 ? (
         <div className="border-t border-line px-5 py-6 sm:px-7">
-          <p className="text-sm text-fg-muted">Még nincs sziget. Adj hozzá egy gépet a címével vagy egy meghívólinkkel, vagy indíts sajátot.</p>
+          <p className="text-sm text-fg-muted">
+            {t('No islands yet. Add a machine by its address or an invite link, or start your own.', 'Még nincs sziget. Adj hozzá egy gépet a címével vagy egy meghívólinkkel, vagy indíts sajátot.')}
+          </p>
         </div>
       ) : (
         <ul className="divide-y divide-line border-t border-line">
@@ -86,13 +93,13 @@ export function HubHome({ onOpen, onAdd, onKeyring }: { onOpen: (nodeId: string)
 
       <div className="flex flex-wrap gap-2 border-t border-line px-5 py-4 sm:px-7">
         <Button variant="primary" onClick={onAdd} icon={<Plus className="size-4" />}>
-          Sziget hozzáadása
+          {t('Add an island', 'Sziget hozzáadása')}
         </Button>
         <a href={README} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-2 border border-line-strong bg-bg/40 px-4 font-mono text-xs tracking-[0.08em] text-fg uppercase hover:border-fg-muted">
-          <BookOpen className="size-4" /> Saját szerver
+          <BookOpen className="size-4" /> {t('Host your own', 'Saját szerver')}
         </a>
         <Button variant="ghost" onClick={onKeyring} icon={<KeyRound className="size-4" />}>
-          Kulcskarika
+          {t('Keyring', 'Kulcskarika')}
         </Button>
       </div>
     </div>
@@ -101,6 +108,7 @@ export function HubHome({ onOpen, onAdd, onKeyring }: { onOpen: (nodeId: string)
 
 function IslandRow({ node, onOpen }: { node: HubNode; onOpen: () => void }) {
   const hub = useHub();
+  const t = useT();
   const { rec, live, signedIn } = node;
   const servers = live.servers ?? [];
   const running = servers.filter((s) => s.state === 'running');
@@ -113,17 +121,15 @@ function IslandRow({ node, onOpen }: { node: HubNode; onOpen: () => void }) {
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-2">
             <span className="truncate font-semibold group-hover:text-signal">{rec.name}</span>
-            {signedIn && <Chip tone="signal">Belépve</Chip>}
-            {rec.featured && <Chip>Kiemelt</Chip>}
+            {signedIn && <Chip tone="signal">{t('Signed in', 'Belépve')}</Chip>}
+            {rec.featured && <Chip>{t('Featured', 'Kiemelt')}</Chip>}
           </span>
           <span className="label mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 !normal-case !tracking-normal">
-            <span className={reach.tone}>{reach.text}</span>
+            <span className={reach.tone}>{t(reach.text)}</span>
             {live.reach === 'online' && live.servers && (
-              <span>
-                {servers.length} szerver · {running.length} fut · {players} játékos
-              </span>
+              <span>{t(`${servers.length} servers · ${running.length} running · ${players} players`, `${servers.length} szerver · ${running.length} fut · ${players} játékos`)}</span>
             )}
-            {live.reach === 'offline' && rec.lastSeenAt && <span>utoljára {relativeTime(rec.lastSeenAt)}</span>}
+            {live.reach === 'offline' && rec.lastSeenAt && <span>{t(`last seen ${relativeTime(rec.lastSeenAt)}`, `utoljára ${relativeTime(rec.lastSeenAt)}`)}</span>}
             <span className="readout text-fg-faint">{shortFingerprint(rec.nodeId)}</span>
           </span>
         </span>
@@ -137,12 +143,18 @@ function IslandRow({ node, onOpen }: { node: HubNode; onOpen: () => void }) {
       {!rec.featured && (
         <button
           onClick={() => {
-            if (window.confirm(`Eltávolítod a(z) „${rec.name}” szigetet a listádból? A gépen semmi nem változik; ${signedIn ? 'ez az eszköz kijelentkezik róla.' : ''}`)) {
+            const ok = window.confirm(
+              t(
+                `Remove the island “${rec.name}” from your list? Nothing changes on the machine.${signedIn ? ' This device is signed out of it.' : ''}`,
+                `Eltávolítod a(z) „${rec.name}” szigetet a listádból? A gépen semmi nem változik.${signedIn ? ' Ez az eszköz kijelentkezik róla.' : ''}`,
+              ),
+            );
+            if (ok) {
               void hub.removeNode(rec.nodeId);
             }
           }}
           className="p-2 text-fg-faint hover:text-danger"
-          aria-label={`${rec.name} eltávolítása a listából`}
+          aria-label={t(`Remove ${rec.name} from the list`, `${rec.name} eltávolítása a listából`)}
         >
           <Trash2 className="size-4" />
         </button>

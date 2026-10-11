@@ -2,6 +2,7 @@ import { SendHorizontal } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { ApiError } from '../api';
 import { useApi } from '../hub/HubProvider';
+import { useLang, useT } from '../i18n';
 import { Button } from './ui';
 
 interface Line {
@@ -21,6 +22,8 @@ function lineClass(line: string) {
 
 export function Console({ serverId, canSend }: { serverId: string; canSend: boolean }) {
   const api = useApi();
+  const t = useT();
+  const lang = useLang();
   const [lines, setLines] = useState<Line[]>([]);
   const [command, setCommand] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -34,6 +37,9 @@ export function Console({ serverId, canSend }: { serverId: string; canSend: bool
   useEffect(() => {
     let alive = true;
     let timer: ReturnType<typeof setTimeout>;
+    // The panel's own lines come in the page's language, so a language switch reloads the log.
+    lastSeq.current = 0;
+    setLines([]);
     const poll = async () => {
       try {
         const res = await api.get<{ lines: Line[]; last: number }>(`/api/v1/servers/${serverId}/logs?since=${lastSeq.current}`);
@@ -56,7 +62,7 @@ export function Console({ serverId, canSend }: { serverId: string; canSend: bool
       alive = false;
       clearTimeout(timer);
     };
-  }, [api, serverId]);
+  }, [api, serverId, lang]);
 
   useEffect(() => {
     const el = box.current;
@@ -81,7 +87,7 @@ export function Console({ serverId, canSend }: { serverId: string; canSend: bool
       setCommand('');
       stick.current = true;
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Nem sikerült elküldeni.');
+      setError(err instanceof ApiError ? err.message : t('Could not send it.', 'Nem sikerült elküldeni.'));
     } finally {
       setSending(false);
     }
@@ -105,7 +111,7 @@ export function Console({ serverId, canSend }: { serverId: string; canSend: bool
         aria-live="off"
       >
         {lines.length === 0 ? (
-          <p className="text-fg-faint">A szerver naplója itt jelenik meg.</p>
+          <p className="text-fg-faint">{t('The server log shows up here.', 'A szerver naplója itt jelenik meg.')}</p>
         ) : (
           lines.map((l) => (
             <div key={l.seq} className={`break-words whitespace-pre-wrap ${lineClass(l.line)}`}>
@@ -123,12 +129,12 @@ export function Console({ serverId, canSend }: { serverId: string; canSend: bool
           onChange={(e) => setCommand(e.target.value)}
           onKeyDown={onKeyDown}
           disabled={!canSend}
-          placeholder={canSend ? 'say Sziasztok! · whitelist add Steve · op Steve' : 'A parancsokhoz indítsd el a szervert'}
+          placeholder={canSend ? t('say Hello! · whitelist add Steve · op Steve', 'say Sziasztok! · whitelist add Steve · op Steve') : t('Start the server to send commands', 'A parancsokhoz indítsd el a szervert')}
           className="h-12 min-w-0 flex-1 bg-transparent px-3 font-mono text-sm text-fg placeholder:text-fg-faint/80 focus:outline-none disabled:opacity-50"
-          aria-label="Szerver parancs"
+          aria-label={t('Server command', 'Szerver parancs')}
         />
         <Button type="submit" variant="primary" busy={sending} disabled={!canSend || !command.trim()} icon={<SendHorizontal className="size-4" />} className="!h-12">
-          <span className="hidden sm:inline">Küldés</span>
+          <span className="hidden sm:inline">{t('Send', 'Küldés')}</span>
         </Button>
       </form>
       {error && <p className="border-t border-line px-5 py-2 text-sm text-danger">{error}</p>}

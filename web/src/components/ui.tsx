@@ -1,6 +1,7 @@
 import { LoaderCircle, X } from 'lucide-react';
 import { useEffect, useRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { STATE_LABEL } from '../format';
+import { useT } from '../i18n';
 import type { ServerState } from '../types';
 
 type Variant = 'primary' | 'secondary' | 'danger' | 'ghost';
@@ -79,10 +80,11 @@ export function StateDot({ state, className = '' }: { state: ServerState; classN
 }
 
 export function StateLabel({ state }: { state: ServerState }) {
+  const t = useT();
   return (
     <span className={`inline-flex items-center gap-2 font-mono text-xs tracking-[0.08em] uppercase ${STATE_TEXT[state]}`}>
       <StateDot state={state} />
-      {STATE_LABEL[state]}
+      {t(STATE_LABEL[state])}
     </span>
   );
 }
@@ -162,6 +164,7 @@ export function Tabs<T extends string>({
 }
 
 export function Modal({ open, onClose, title, children, wide = false }: { open: boolean; onClose: () => void; title: ReactNode; children: ReactNode; wide?: boolean }) {
+  const t = useT();
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const d = ref.current;
@@ -180,7 +183,7 @@ export function Modal({ open, onClose, title, children, wide = false }: { open: 
         <div className="p-5 sm:p-7">
           <div className="mb-5 flex items-start justify-between gap-4">
             <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
-            <button onClick={onClose} className="-m-1 p-1 text-fg-muted hover:bg-surface-2 hover:text-fg" aria-label="Bezárás">
+            <button onClick={onClose} className="-m-1 p-1 text-fg-muted hover:bg-surface-2 hover:text-fg" aria-label={t('Close', 'Bezárás')}>
               <X className="size-5" />
             </button>
           </div>

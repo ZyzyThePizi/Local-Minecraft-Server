@@ -37,6 +37,8 @@ export interface WorldState {
   station: StationId | null;
   /** Show the empty "add an island" slot in the overview. */
   addSlot: boolean;
+  /** The label of that slot, in the page's language. */
+  addLabel?: string;
 }
 
 const MOOD_FOR: Record<WorldServerState, MoodName> = {
@@ -100,7 +102,8 @@ export class World {
   private fireflies!: ReturnType<typeof createParticles>;
   private sparks!: ReturnType<typeof createParticles>;
   private addSlot = new Group();
-  private addTag = makeNameTag('+ Új sziget');
+  private addLabel = '+ New island';
+  private addTag = makeNameTag(this.addLabel);
   private addLevel = 0;
   private raycaster = new Raycaster();
 
@@ -185,8 +188,21 @@ export class World {
 
   // ---------- state ----------
 
+  private setAddLabel(text: string) {
+    if (text === this.addLabel) return;
+    this.addLabel = text;
+    this.addSlot.remove(this.addTag);
+    this.addTag.material.map?.dispose();
+    this.addTag.material.dispose();
+    this.addTag = makeNameTag(text);
+    this.addTag.scale.multiplyScalar(7);
+    this.addTag.position.y = 12;
+    this.addSlot.add(this.addTag);
+  }
+
   setState(next: WorldState) {
     this.state = next;
+    if (next.addLabel) this.setAddLabel(next.addLabel);
     const shown = next.islands.slice(0, MAX_ISLANDS);
     const keys = new Set(shown.map((i) => i.key));
     for (const [key, island] of this.islands) {

@@ -11,6 +11,7 @@ import { Button, GrassBlock } from './components/ui';
 import { WorldCanvas } from './components/WorldCanvas';
 import { seedOf } from './hub/crypto';
 import { HubProvider, useHub } from './hub/HubProvider';
+import { setLang, useLang, useT } from './i18n';
 import type { IslandInfo, StationId, WorldState } from './world';
 
 type Route = { view: 'hub' } | { view: 'island'; nodeId: string; tab: Tab; serverId: string | null };
@@ -34,8 +35,32 @@ export default function App() {
   );
 }
 
+/** English or Hungarian; the choice stays in this browser. */
+function LangSwitch() {
+  const t = useT();
+  const lang = useLang();
+  return (
+    <div role="group" aria-label={t('Language', 'Nyelv')} className="inline-flex h-10 items-stretch border border-line-strong font-mono text-xs tracking-[0.08em]">
+      {(['en', 'hu'] as const).map((l) => (
+        <button
+          key={l}
+          lang={l}
+          onClick={() => setLang(l)}
+          aria-pressed={lang === l}
+          title={l === 'en' ? 'English' : 'Magyar'}
+          className={`px-2.5 uppercase transition-colors ${lang === l ? 'bg-signal font-semibold text-signal-ink' : 'text-fg-muted hover:text-fg'}`}
+        >
+          {l}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function Hub() {
   const hub = useHub();
+  const t = useT();
+  const lang = useLang();
   const [route, setRoute] = useState<Route>(() => parseRoute(location.hash));
   const [connect, setConnect] = useState<{ open: boolean; initial: string }>({ open: false, initial: '' });
   const [keyringOpen, setKeyringOpen] = useState(false);
@@ -79,8 +104,8 @@ function Hub() {
     else window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [route.view, route.view === 'island' ? route.nodeId : null]);
   useEffect(() => {
-    document.title = node ? `${node.rec.name} · Local Minecraft Server` : 'Szigetvilág · Local Minecraft Server';
-  }, [node?.rec.name]);
+    document.title = `${node ? node.rec.name : t('Archipelago', 'Szigetvilág')} · Local Minecraft Server`;
+  }, [node?.rec.name, lang]);
 
   const worldState = useMemo<WorldState>(() => {
     const islands: IslandInfo[] = hub.nodes.map((n) => {
@@ -116,8 +141,9 @@ function Hub() {
       focus: node?.rec.nodeId ?? null,
       station: node?.signedIn && route.view === 'island' ? STATION[route.tab] : null,
       addSlot: hub.ready,
+      addLabel: t('+ New island', '+ Új sziget'),
     };
-  }, [hub.nodes, hub.ready, node, focusInfo, route]);
+  }, [hub.nodes, hub.ready, node, focusInfo, route, lang]);
 
   // Clicks on the open sky/sea of the overview fly to the island under the pointer.
   const pickAt = (x: number, y: number) => pickRef.current?.(x, y) ?? null;
@@ -139,10 +165,10 @@ function Hub() {
 
       <header className="fixed inset-x-0 top-0 z-30 h-[var(--nav-h)] border-b border-line bg-bg/90 backdrop-blur-xl">
         <div className="mx-auto flex h-full max-w-[1440px] items-center justify-between gap-4 px-[var(--shell-pad)]">
-          <nav className="flex min-w-0 items-center gap-2" aria-label="Morzsamenü">
+          <nav className="flex min-w-0 items-center gap-2" aria-label={t('Breadcrumb', 'Morzsamenü')}>
             <a href="#/" onClick={(e) => (e.preventDefault(), go({ view: 'hub' }))} className="flex shrink-0 items-center gap-3">
               <GrassBlock className="size-7" />
-              <span className="font-semibold tracking-tight">Szigetvilág</span>
+              <span className="font-semibold tracking-tight">{t('Archipelago', 'Szigetvilág')}</span>
             </a>
             {node && (
               <>
@@ -152,21 +178,22 @@ function Hub() {
             )}
           </nav>
           <div className="flex shrink-0 items-center gap-2">
+            <LangSwitch />
             {node ? (
               node.signedIn ? (
-                <Button variant="ghost" aria-label="Kilépés" onClick={() => void hub.signOut(node.rec.nodeId)} icon={<LogOut className="size-4" />}>
-                  <span className="hidden sm:inline">Kilépés</span>
+                <Button variant="ghost" aria-label={t('Sign out', 'Kilépés')} onClick={() => void hub.signOut(node.rec.nodeId)} icon={<LogOut className="size-4" />}>
+                  <span className="hidden sm:inline">{t('Sign out', 'Kilépés')}</span>
                 </Button>
               ) : (
                 node.live.reach === 'online' && (
                   <Button onClick={() => setLoginOpen(true)} icon={<LogIn className="size-4" />}>
-                    Belépés
+                    {t('Sign in', 'Belépés')}
                   </Button>
                 )
               )
             ) : (
-              <Button aria-label="Sziget hozzáadása" onClick={() => setConnect({ open: true, initial: '' })} icon={<Plus className="size-4" />}>
-                <span className="hidden sm:inline">Sziget</span>
+              <Button aria-label={t('Add an island', 'Sziget hozzáadása')} onClick={() => setConnect({ open: true, initial: '' })} icon={<Plus className="size-4" />}>
+                <span className="hidden sm:inline">{t('Island', 'Sziget')}</span>
               </Button>
             )}
           </div>
@@ -192,7 +219,7 @@ function Hub() {
               )}
             </div>
             <p className="label pointer-events-none absolute right-[var(--shell-pad)] bottom-10 hidden max-w-xs text-right lg:block">
-              <span className="text-signal">●</span> Élő szigetvilág · kattints egy szigetre
+              <span className="text-signal">●</span> {t('Live archipelago · click an island', 'Élő szigetvilág · kattints egy szigetre')}
             </p>
           </section>
         ) : (
@@ -210,7 +237,7 @@ function Hub() {
 
       <footer className={`relative ${node?.signedIn ? 'bg-bg' : 'glass'} border-t border-line`}>
         <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-3 px-[var(--shell-pad)] py-4">
-          <span className="label">Local Minecraft Server · saját gépen futó szerverek</span>
+          <span className="label">Local Minecraft Server · {t('servers that run on your own machines', 'saját gépen futó szerverek')}</span>
           <a href="https://github.com/ZyzyThePizi/Local-Minecraft-Server" target="_blank" rel="noreferrer" className="label hover:text-fg">
             GitHub
           </a>

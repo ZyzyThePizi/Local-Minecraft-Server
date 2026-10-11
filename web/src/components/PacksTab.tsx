@@ -4,6 +4,7 @@ import { ApiError } from '../api';
 import { useApi } from '../hub/HubProvider';
 import { compactNumber, formatDate } from '../format';
 import { useDebounced } from '../hooks';
+import { useLang, useT } from '../i18n';
 import type { Job, PackSummary, PackVersion, Source } from '../types';
 import { JobProgress } from './JobProgress';
 import { Button, Chip, inputClass, Modal, Notice, PackIcon, Panel, PanelTitle, Skeleton, Tabs } from './ui';
@@ -30,6 +31,8 @@ export function PacksTab({
   const [selected, setSelected] = useState<PackSummary | null>(null);
   const [job, setJob] = useState<Job | null>(null);
   const api = useApi();
+  const t = useT();
+  const lang = useLang();
 
   // Pick up an install that is still running (e.g. after a page reload).
   useEffect(() => {
@@ -59,7 +62,7 @@ export function PacksTab({
     return () => {
       alive = false;
     };
-  }, [api, source, q]);
+  }, [api, source, q, lang]);
 
   const install = async (pack: { source: Source; projectId?: string; versionId: string; name: string }) => {
     const res = await api.post<{ job: Job }>('/api/v1/packs/install', pack);
@@ -82,7 +85,7 @@ export function PacksTab({
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
         <Tabs
-          label="Forrás"
+          label={t('Source', 'Forrás')}
           value={source}
           onChange={(v) => {
             setSource(v);
@@ -97,9 +100,13 @@ export function PacksTab({
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder={source === 'curseforge' ? 'Keresés név alapján, vagy illeszd be a CurseForge linket / projekt ID-t…' : 'Keresés a Modrinth modpackek között…'}
+              placeholder={
+                source === 'curseforge'
+                  ? t('Search by name, or paste a CurseForge link / project ID…', 'Keresés név alapján, vagy illeszd be a CurseForge linket / projekt ID-t…')
+                  : t('Search the Modrinth modpacks…', 'Keresés a Modrinth modpackek között…')
+              }
               className={`${inputClass} pl-9`}
-              aria-label="Modpack keresése"
+              aria-label={t('Search modpacks', 'Modpack keresése')}
             />
           </div>
         )}
@@ -114,13 +121,18 @@ export function PacksTab({
       ) : (
         <>
           <p className="label">
-            {via === 'direct' ? 'A beillesztett modpack' : q ? `Találatok: „${q}”` : 'Legnépszerűbb modpackek · kattints egyre a telepítéshez'}
+            {via === 'direct'
+              ? t('The pasted modpack', 'A beillesztett modpack')
+              : q
+                ? t(`Results for “${q}”`, `Találatok: „${q}”`)
+                : t('Most popular modpacks · click one to install it', 'Legnépszerűbb modpackek · kattints egyre a telepítéshez')}
           </p>
           {source === 'curseforge' && via === 'mirror' && (
             <Notice>
-              A CurseForge a kulcsodnak nem ad jogot a keresésre, ezért a keresés egy nyilvános tükrön (api.curse.tools) fut. A modpack adatai és
-              a letöltés továbbra is a hivatalos API-n, a saját kulcsoddal mennek. Ha a CurseForge konzolon új kulcsot generálsz, a kulcs újra
-              kereshet hivatalosan.
+              {t(
+                'CurseForge does not let your key search, so the search runs on a public mirror (api.curse.tools). The modpack details and the download still go through the official API with your own key. A new key generated in the CurseForge console can search officially again.',
+                'A CurseForge a kulcsodnak nem ad jogot a keresésre, ezért a keresés egy nyilvános tükrön (api.curse.tools) fut. A modpack adatai és a letöltés továbbra is a hivatalos API-n, a saját kulcsoddal mennek. Ha a CurseForge konzolon új kulcsot generálsz, a kulcs újra kereshet hivatalosan.',
+              )}
             </Notice>
           )}
           <div className="grid gap-px border border-line bg-line sm:grid-cols-2 xl:grid-cols-3">
@@ -128,7 +140,7 @@ export function PacksTab({
               ? Array.from({ length: 6 }, (_, i) => <div key={i} className="h-44 animate-pulse bg-surface/80" />)
               : results?.map((p) => <PackCard key={p.id} pack={p} onClick={() => setSelected(p)} />)}
           </div>
-          {results?.length === 0 && <p className="py-8 text-center text-fg-muted">Nincs találat erre: „{q}”.</p>}
+          {results?.length === 0 && <p className="py-8 text-center text-fg-muted">{t(`No results for “${q}”.`, `Nincs találat erre: „${q}”.`)}</p>}
         </>
       )}
 
@@ -177,6 +189,7 @@ function VersionPicker({
   disabled: boolean;
 }) {
   const api = useApi();
+  const t = useT();
   const [versions, setVersions] = useState<PackVersion[] | null>(null);
   const [versionId, setVersionId] = useState('');
   const [showAll, setShowAll] = useState(false);
@@ -206,7 +219,7 @@ function VersionPicker({
     try {
       await onInstall({ source: pack.source, projectId: pack.id, versionId, name: pack.name });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Ismeretlen hiba.');
+      setError(err instanceof ApiError ? err.message : t('Unknown error.', 'Ismeretlen hiba.'));
     } finally {
       setBusy(false);
     }
@@ -222,7 +235,7 @@ function VersionPicker({
               <p className="text-fg-muted">{pack.summary}</p>
               {pack.websiteUrl && (
                 <a href={pack.websiteUrl} target="_blank" rel="noreferrer" className="label mt-2 inline-flex items-center gap-1 !text-signal hover:underline">
-                  {SOURCE_LABEL[pack.source]} oldal <ArrowUpRight className="size-3.5" />
+                  {t(`${SOURCE_LABEL[pack.source]} page`, `${SOURCE_LABEL[pack.source]} oldal`)} <ArrowUpRight className="size-3.5" />
                 </a>
               )}
             </div>
@@ -233,12 +246,12 @@ function VersionPicker({
             <div>
               <div className="mb-2 flex items-center justify-between">
                 <label htmlFor="pack-version" className="label">
-                  Verzió
+                  {t('Version', 'Verzió')}
                 </label>
                 {versions.some((v) => v.type !== 'release') && (
                   <label className="label flex cursor-pointer items-center gap-1.5">
                     <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} className="accent-signal" />
-                    Béta verziók is
+                    {t('Include beta versions', 'Béta verziók is')}
                   </label>
                 )}
               </div>
@@ -261,24 +274,26 @@ function VersionPicker({
                     </Chip>
                   ))}
                   <Chip>{formatDate(current.date)}</Chip>
-                  {current.hasServerPack && <Chip tone="signal">Hivatalos szervercsomag</Chip>}
+                  {current.hasServerPack && <Chip tone="signal">{t('Official server pack', 'Hivatalos szervercsomag')}</Chip>}
                 </div>
               )}
             </div>
           )}
 
           <p className="border-t border-line pt-4 text-xs leading-relaxed text-fg-faint">
-            A telepítés egy új szervert hoz létre, a mostani megmarad, és a Szerverek fülön bármikor visszaválthatsz rá. A kliens-oldali
-            modokat (shaderek, minimapek stb.) kihagyom, a megfelelő Java verziót letöltöm.
+            {t(
+              'The install creates a new server; your current ones stay, and you can switch between them on the Servers tab. Client-side mods (shaders, minimaps and the like) are left out, and the right Java version is downloaded.',
+              'A telepítés egy új szervert hoz létre, a mostani megmarad, és a Szerverek fülön bármikor visszaválthatsz rá. A kliens-oldali modokat (shaderek, minimapek stb.) kihagyom, a megfelelő Java verziót letöltöm.',
+            )}
           </p>
           {error && <Notice tone="danger">{error}</Notice>}
-          {disabled && <Notice tone="warn">Már fut egy telepítés, várd meg, amíg befejeződik.</Notice>}
+          {disabled && <Notice tone="warn">{t('An install is already running, wait until it finishes.', 'Már fut egy telepítés, várd meg, amíg befejeződik.')}</Notice>}
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={onClose}>
-              Mégse
+              {t('Cancel', 'Mégse')}
             </Button>
             <Button variant="primary" busy={busy} disabled={!versionId || disabled} onClick={go} icon={<Download className="size-4" />}>
-              Telepítés a szerverre
+              {t('Install on the machine', 'Telepítés a szerverre')}
             </Button>
           </div>
         </div>
@@ -289,6 +304,7 @@ function VersionPicker({
 
 function VanillaPicker({ onInstall, disabled }: { onInstall: (version: string) => Promise<void>; disabled: boolean }) {
   const api = useApi();
+  const t = useT();
   const [versions, setVersions] = useState<PackVersion[] | null>(null);
   const [version, setVersion] = useState('');
   const [busy, setBusy] = useState(false);
@@ -309,7 +325,7 @@ function VanillaPicker({ onInstall, disabled }: { onInstall: (version: string) =
     try {
       await onInstall(version);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Ismeretlen hiba.');
+      setError(err instanceof ApiError ? err.message : t('Unknown error.', 'Ismeretlen hiba.'));
     } finally {
       setBusy(false);
     }
@@ -317,10 +333,10 @@ function VanillaPicker({ onInstall, disabled }: { onInstall: (version: string) =
 
   return (
     <Panel className="max-w-xl">
-      <PanelTitle>Vanilla szerver</PanelTitle>
-      <p className="mb-5 text-fg-muted">Mod nélküli, hivatalos Minecraft szerver a Mojangtól.</p>
+      <PanelTitle>{t('Vanilla server', 'Vanilla szerver')}</PanelTitle>
+      <p className="mb-5 text-fg-muted">{t('The official Minecraft server from Mojang, without mods.', 'Mod nélküli, hivatalos Minecraft szerver a Mojangtól.')}</p>
       <div className="flex">
-        <select value={version} onChange={(e) => setVersion(e.target.value)} className={`${inputClass} border-r-0`} disabled={!versions} aria-label="Minecraft verzió">
+        <select value={version} onChange={(e) => setVersion(e.target.value)} className={`${inputClass} border-r-0`} disabled={!versions} aria-label={t('Minecraft version', 'Minecraft verzió')}>
           {versions?.map((v) => (
             <option key={v.id} value={v.id}>
               {v.id}
@@ -328,7 +344,7 @@ function VanillaPicker({ onInstall, disabled }: { onInstall: (version: string) =
           ))}
         </select>
         <Button variant="primary" busy={busy} disabled={!version || disabled} onClick={go} icon={<Download className="size-4" />}>
-          Telepítés
+          {t('Install', 'Telepítés')}
         </Button>
       </div>
       {error && (
@@ -341,26 +357,27 @@ function VanillaPicker({ onInstall, disabled }: { onInstall: (version: string) =
 }
 
 function CurseForgeKeyHelp({ invalid }: { invalid: boolean }) {
+  const t = useT();
   return (
     <Panel className="max-w-2xl">
       <PanelTitle aside={<KeyRound className="size-4 text-warn" aria-hidden />}>
-        {invalid ? 'A CurseForge API kulcs érvénytelen' : 'CurseForge API kulcs szükséges'}
+        {invalid ? t('The CurseForge API key is invalid', 'A CurseForge API kulcs érvénytelen') : t('A CurseForge API key is needed', 'CurseForge API kulcs szükséges')}
       </PanelTitle>
       <ol className="space-y-3 text-sm text-fg-muted">
         {[
           <>
-            Lépj be a{' '}
+            {t('Sign in at', 'Lépj be a')}{' '}
             <a href="https://console.curseforge.com/" target="_blank" rel="noreferrer" className="text-signal hover:underline">
               console.curseforge.com
             </a>{' '}
-            oldalon (ingyenes).
+            {t('(it is free).', 'oldalon (ingyenes).')}
           </>,
-          <>Az „API Keys” menüben másold ki a kulcsot.</>,
+          <>{t('Copy the key from the “API Keys” menu.', 'Az „API Keys” menüben másold ki a kulcsot.')}</>,
           <>
-            Írd be a backend gépen a <code className="readout bg-bg px-1 text-fg">backend/.env</code> fájlba:{' '}
+            {t('On the backend machine, put it into the', 'Írd be a backend gépen a')} <code className="readout bg-bg px-1 text-fg">backend/.env</code> {t('file:', 'fájlba:')}{' '}
             <code className="readout bg-bg px-1 text-fg">CURSEFORGE_API_KEY='…'</code>
           </>,
-          <>Mentsd el. A backend magától észreveszi, újraindítás nem kell.</>,
+          <>{t('Save it. The backend notices by itself; no restart is needed.', 'Mentsd el. A backend magától észreveszi, újraindítás nem kell.')}</>,
         ].map((step, i) => (
           <li key={i} className="flex gap-3">
             <span className="readout text-signal">{String(i + 1).padStart(2, '0')}</span>
@@ -368,7 +385,9 @@ function CurseForgeKeyHelp({ invalid }: { invalid: boolean }) {
           </li>
         ))}
       </ol>
-      <p className="mt-5 border-t border-line pt-4 text-sm text-fg-faint">Addig a Modrinth fülön ugyanígy kereshetsz és telepíthetsz modpackeket.</p>
+      <p className="mt-5 border-t border-line pt-4 text-sm text-fg-faint">
+        {t('Until then you can search and install modpacks the same way on the Modrinth tab.', 'Addig a Modrinth fülön ugyanígy kereshetsz és telepíthetsz modpackeket.')}
+      </p>
     </Panel>
   );
 }

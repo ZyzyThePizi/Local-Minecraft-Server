@@ -23,7 +23,7 @@ export function WorldCanvas({ state, pickRef }: { state: WorldState; pickRef?: M
         if (pickRef) pickRef.current = (x, y) => world.current?.pick(x, y) ?? null;
         requestAnimationFrame(() => !disposed && setReady(true));
       })
-      .catch((err: unknown) => console.warn('A 3D világ nem tölthető be:', err));
+      .catch((err: unknown) => console.warn('The 3D world could not be loaded:', err));
     return () => {
       disposed = true;
       world.current?.dispose();

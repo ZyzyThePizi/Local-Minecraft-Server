@@ -1,3 +1,4 @@
+import { getLang, tr } from '../i18n';
 import { canVerify, fingerprintOf, randomToken, verifySignature } from './crypto';
 import { keyring, openToken, sealToken, type NodeRecord } from './keyring';
 
@@ -36,12 +37,13 @@ export const normalizeUrl = (url: string) => url.trim().replace(/\/+$/, '');
 async function raw<T>(url: string, init: RequestInit = {}, timeoutMs = 30_000): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+    // The machine answers in the page's language (a CORS-safelisted header, so no preflight).
+    res = await fetch(url, { ...init, headers: { 'Accept-Language': getLang(), ...(init.headers as Record<string, string>) }, signal: AbortSignal.timeout(timeoutMs) });
   } catch {
-    throw new ApiError(0, 'NETWORK', 'A gép nem érhető el.');
+    throw new ApiError(0, 'NETWORK', tr('The machine cannot be reached.', 'A gép nem érhető el.'));
   }
   const data = (await res.json().catch(() => null)) as { error?: { code: string; message: string } } | null;
-  if (!res.ok) throw new ApiError(res.status, data?.error?.code ?? `HTTP_${res.status}`, data?.error?.message ?? `Hiba történt (${res.status}).`);
+  if (!res.ok) throw new ApiError(res.status, data?.error?.code ?? `HTTP_${res.status}`, data?.error?.message ?? tr(`Something went wrong (${res.status}).`, `Hiba történt (${res.status}).`));
   return data as T;
 }
 
@@ -58,19 +60,25 @@ export async function hello(url: string, pinned?: string): Promise<Hello & { ver
     // Version 1 backends have no /api/v1: tell them apart from a machine that is switched off.
     if (err instanceof ApiError && err.status === 404) {
       const old = await raw<{ ok?: boolean }>(`${url}/api/health`, {}, 5000).catch(() => null);
-      if (old?.ok) throw new ApiError(426, 'OUTDATED', 'Ez a gép a backend régi verzióját futtatja. Frissítsd (git pull), majd indítsd újra.');
+      if (old?.ok) throw new ApiError(426, 'OUTDATED', tr('This machine runs an old version of the backend. Update it (git pull), then restart it.', 'Ez a gép a backend régi verzióját futtatja. Frissítsd (git pull), majd indítsd újra.'));
     }
     throw err;
   }
   if (h.apiVersion !== API_VERSION) {
-    throw new ApiError(426, 'OUTDATED', h.apiVersion > API_VERSION ? 'Ez a gép újabb verziójú, frissítsd az oldalt.' : 'Ez a gép régi verziót futtat, frissítsd a backendjét.');
+    throw new ApiError(
+      426,
+      'OUTDATED',
+      h.apiVersion > API_VERSION
+        ? tr('This machine runs a newer version, reload the page.', 'Ez a gép újabb verziójú, frissítsd az oldalt.')
+        : tr('This machine runs an old version, update its backend.', 'Ez a gép régi verziót futtat, frissítsd a backendjét.'),
+    );
   }
-  if ((await fingerprintOf(h.publicKey)) !== h.nodeId) throw new ApiError(495, 'BAD_IDENTITY', 'A gép azonosítója nem egyezik a kulcsával.');
-  if (pinned && pinned !== h.publicKey) throw new ApiError(495, 'KEY_CHANGED', 'A gép kulcsa megváltozott.');
+  if ((await fingerprintOf(h.publicKey)) !== h.nodeId) throw new ApiError(495, 'BAD_IDENTITY', tr('The machine id does not match its key.', 'A gép azonosítója nem egyezik a kulcsával.'));
+  if (pinned && pinned !== h.publicKey) throw new ApiError(495, 'KEY_CHANGED', tr('The machine key has changed.', 'A gép kulcsa megváltozott.'));
   let verified = false;
   if (await canVerify()) {
     verified = await verifySignature(h.publicKey, h.signature, `local-minecraft-server/hello/v1\n${h.nodeId}\n${nonce}`);
-    if (!verified) throw new ApiError(495, 'BAD_SIGNATURE', 'A gép nem tudta igazolni a kulcsát.');
+    if (!verified) throw new ApiError(495, 'BAD_SIGNATURE', tr('The machine could not prove it holds its key.', 'A gép nem tudta igazolni a kulcsát.'));
   }
   return { ...h, verified };
 }
@@ -85,7 +93,7 @@ export async function sealTokens(t: Tokens, device: string) {
 /** A readable default name for this browser in the machine's session list. */
 export function deviceLabel() {
   const ua = navigator.userAgent;
-  const browser = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'Böngésző';
+  const browser = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : tr('Browser', 'Böngésző');
   const os = /Windows/.test(ua) ? 'Windows' : /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iOS' : /Mac OS/.test(ua) ? 'macOS' : /Linux/.test(ua) ? 'Linux' : '';
   return [browser, os].filter(Boolean).join(' · ');
 }
@@ -116,7 +124,7 @@ export class NodeClient {
   private refreshNow() {
     const run = async () => {
       const rec = await keyring.get(this.nodeId);
-      if (!rec?.auth) throw new ApiError(401, 'SIGNED_OUT', 'Nem vagy belépve.');
+      if (!rec?.auth) throw new ApiError(401, 'SIGNED_OUT', tr('You are not signed in.', 'Nem vagy belépve.'));
       let t: Tokens;
       try {
         t = await raw<Tokens>(`${this.url}/api/v1/session/refresh`, {

@@ -1,3 +1,4 @@
+import { tr } from '../i18n';
 import { b64url, utf8 } from './crypto';
 
 /**
@@ -120,12 +121,12 @@ export async function exportKeyring(pass: string) {
 /** Adds the machines of an exported keyring. Ones already pinned with a different key are skipped. */
 export async function importKeyring(text: string, pass: string) {
   const file = JSON.parse(text) as { format?: string; salt: string; iv: string; data: string };
-  if (file.format !== 'lms-keyring') throw new Error('Ez nem kulcskarika-fájl.');
+  if (file.format !== 'lms-keyring') throw new Error(tr('This is not a keyring file.', 'Ez nem kulcskarika-fájl.'));
   let plain: ArrayBuffer;
   try {
     plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64url.decode(file.iv) }, await passKey(pass, b64url.decode(file.salt), 'decrypt'), b64url.decode(file.data));
   } catch {
-    throw new Error('Hibás jelmondat.');
+    throw new Error(tr('Wrong passphrase.', 'Hibás jelmondat.'));
   }
   const { nodes } = JSON.parse(new TextDecoder().decode(plain)) as { nodes: ExportedNode[] };
   const result = { added: 0, updated: 0, conflicts: [] as string[] };
