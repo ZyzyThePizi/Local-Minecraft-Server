@@ -6,13 +6,19 @@ Minecraft servers that run on your own PCs and laptops, all managed from one pub
 - **Every machine is an island.** Anyone can start a backend on their own machine. The hub lists the machines your
   browser knows, as islands of one archipelago. There are no user accounts: each backend has its own password.
 - **Several servers per machine**, running side by side within the machine's RAM budget, each with its own world, game
-  port and playit.gg tunnel. One-click modpack install from search (CurseForge, Modrinth or vanilla), a console, quick
-  commands and `server.properties` for each server.
+  port and playit.gg tunnel. One-click modpack install from search (CurseForge, Modrinth or vanilla), a console,
+  `server.properties` and a restart button for each server.
+- **Commands as buttons:** the everyday ones up front (OP, game mode, whitelist, time, weather, difficulty), and a
+  searchable catalogue of a few hundred more (per player, moderation, messages, world, game rules, scoreboards,
+  performance), each with a description and the exact command it sends. Only what the server's Minecraft version and
+  loader understand is listed.
+- **A fresh start in one click:** wipe every player's data, the world, or everything at once (see below).
 - **Sharing without handing out the password:** invite links (with an expiry and a use limit, revocable at any time), a
   list of the devices that are signed in, and an audit log of who did what.
 - The page floats above a **live Minecraft archipelago rendered in Three.js** that mirrors what runs where.
 
-The panel UI is in Hungarian; the labels below are given with their English meaning.
+The hub is in English, with a switch to Hungarian in the top bar (the choice stays in the browser). The backend's own
+console window prints Hungarian.
 
 ```
  browser (hub, GitHub Pages) ──HTTPS──► Tailscale Funnel ──► backend A (127.0.0.1:8765) ──► Minecraft servers (java)
@@ -31,12 +37,12 @@ The panel UI is in Hungarian; the labels below are given with their English mean
 | the big beacon on the control station | the server selected in the panel |
 | Steve figures walking around | players online on that machine |
 | an island sunk under low clouds | the machine is switched off |
-| the pale reef with "+ Új sziget" | add a machine |
+| the pale reef with "+ New island" | add a machine |
 
 The sky follows the focused machine: day while its selected server runs, dawn while it starts, a stormy night after a
 crash. Click an island (or a row in the list) to fly there. Inside an island each admin tab has a station and the camera
-flies to it: **Vezérlés** (control) → beacon, **Modpack** → chest, **Szerverek** (servers) → Nether portal,
-**Beállítások** (settings) → crafting table, **Gép** (machine) → the whole island. Every texture is generated at runtime.
+flies to it: **Control** → beacon, **Modpacks** → chest, **Servers** → Nether portal, **Settings** → crafting table,
+**Machine** → the whole island. Every texture is generated at runtime.
 The 3D world is a separate chunk loaded after the first paint, and with `prefers-reduced-motion` it renders a still frame.
 
 ## How it works
@@ -66,7 +72,7 @@ port, so several can run at once.
   a 14-day refresh token that rotates on every use. A refresh token used twice (a stolen copy) ends the session.
   Everyone who gets in has full access to that machine.
 - **Keyring.** The hub keeps the machines and sessions in this browser's IndexedDB; refresh tokens are encrypted with a
-  non-extractable key. *Kulcskarika* (keyring) moves them to another device in a passphrase-encrypted file.
+  non-extractable key. *Keyring* moves them to another device in a passphrase-encrypted file.
 
 ## Setting up a machine
 
@@ -82,14 +88,14 @@ port, so several can run at once.
 3. **`backend/.env` holds only two secrets:** `ADMIN_PASSWORD` and the optional `CURSEFORGE_API_KEY='…'` (inside single
    quotes; <https://console.curseforge.com/> → *API Keys*; Modrinth works without it). Changes take effect on save.
    Everything else (machine name, RAM budget, public status, addresses, allowed pages) is set in the panel under
-   **Gép** and saved to `data/settings.json`. Settings an older version kept in `.env` are moved there on the first start.
+   **Machine** and saved to `data/settings.json`. Settings an older version kept in `.env` are moved there on the first start.
 4. **Public address.** With Tailscale installed and logged in, the backend publishes itself with Funnel on port 10000.
    A second backend on the same PC (started from another folder) gets its own sub-path and the next free local port.
-   With another tunnel (e.g. Cloudflare) enter its address under *Gép → Nyilvános cím* (public address).
+   With another tunnel (e.g. Cloudflare) enter its address under *Machine → Public address*.
 5. **Game traffic.** `start-backend.bat` installs playit.gg if it is missing (the official signed installer, signature
    checked against Developed Methods LLC) and starts it if it is not running. On playit.gg create one *Minecraft Java*
-   tunnel per server, to the local port the panel shows under *Beállítások* (settings), and enter the tunnel address in
-   the same place.
+   tunnel per server, to the local port the panel shows under *Settings*, and enter the tunnel address in the same
+   place.
 6. **Featured machines** (optional): machines listed in the repository variable `API_URLS` are shown to every visitor.
    ```powershell
    gh variable set API_URLS --repo ZyzyThePizi/Local-Minecraft-Server --body "https://pc1...:10000"
@@ -100,7 +106,7 @@ port, so several can run at once.
 
 ### Sharing a machine
 
-On **Gép → Megosztás** (machine → sharing) create an invite: who it is for, when it expires (1 hour to 30 days) and how
+On **Machine → Sharing** create an invite: who it is for, when it expires (1 hour to 30 days) and how
 many devices may use it. Send the link privately. The friend opens it, checks the fingerprint and joins with one click;
 the machine then shows up in their hub next to their own. Revoking the invite also signs out every device that used it.
 Handing out the `.env` password works as well, but it cannot be taken back without changing it.
@@ -112,8 +118,22 @@ the exact version shown in the hub), then *Multiplayer → Add Server* with the 
 
 ### Start on Windows sign-in
 
-`Win+R` → `shell:startup` → put a shortcut to `start-backend.bat` there. Servers with *Automatikus indítás* (auto start)
-switched on start together with the backend.
+`Win+R` → `shell:startup` → put a shortcut to `start-backend.bat` there. Servers with *Auto start* switched on start
+together with the backend.
+
+### Starting over
+
+On the **Servers** tab every stopped server has three *Fresh start* buttons. Each one first shows what it deletes and
+what it keeps, and nothing can be undone afterwards:
+
+| Button | Deletes | Keeps |
+|---|---|---|
+| **Player data** | every player's inventory, position, XP, statistics and advancements, per-player mod data (quests, teams, claimed chunks) and the list of known players | the world and everything built in it |
+| **World** | the whole world in every dimension, including the character data stored inside it; the next start generates a new one from the seed in the settings | the list of known players and the backups of backup mods |
+| **Everything** | the world, all player data, the list of known players, and the `simplebackups` and `backups` folders | |
+
+Mods, configs, `server.properties`, the datapacks and server configs inside the world folder, the operators, the
+whitelist and the bans are never touched. One player can be reset on the **Control** tab (the eraser in the player list).
 
 ## Security
 
@@ -123,7 +143,7 @@ switched on start together with the backend.
 - Installing a modpack runs code on the machine, which is why only signed-in people can do it and why invites expire.
 - The audit log (`data/audit.log`) records sign-ins (including failed ones), commands, installs and setting changes,
   with the device name and how they got in.
-- CORS: only the pages listed under *Gép → engedélyezett oldalak* (allowed pages) can call the API from a browser.
+- CORS: only the pages listed under *Machine → allowed pages* can call the API from a browser.
 - The hub is published with a Content Security Policy (scripts only from the site), and everything machines send is
   rendered as text, because the hub holds sign-ins to several machines in one origin.
 - Modpack paths and zips are validated: symlinks and paths that point outside the server folder are never extracted.
@@ -143,7 +163,7 @@ this before you run a backend:
 - **What comes back:** the network's announcements and the minimum recommended backend version.
 
 The beat is signed with the machine key. The panel shows the same summary and the connection state under
-*Gép → Hálózat* (machine → network), and the backend prints it at startup. The code is in
+*Machine → Network*, and the backend prints it at startup. The code is in
 [`backend/src/registry.ts`](backend/src/registry.ts). The registry and the owner's admin panel live in a separate
 private repository.
 
@@ -162,6 +182,9 @@ npm run typecheck
 
 ### API at a glance (`/api/v1`)
 
+Texts the panel shows (errors, the panel's own console lines, install progress, the audit log) come back in the
+language of the `Accept-Language` header: `hu` for Hungarian, English otherwise.
+
 | Endpoint | Auth | Description |
 |---|---|---|
 | `GET /hello?nonce=…` | – | machine id, public key, signature of the nonce, name, version |
@@ -175,4 +198,5 @@ npm run typecheck
 | `GET /servers`, `PATCH · DELETE /servers/:id` | ✓ | installed servers |
 | `POST /servers/:id/start · stop · restart · command`, `GET …/logs` | ✓ | control and console |
 | `GET …/players`, `POST …/players/:uuid/reset`, `GET · PUT …/properties` | ✓ | players, `server.properties` |
+| `POST …/wipe` | ✓ | `{ scope: "players" \| "world" \| "all" }`: a fresh start for a stopped server |
 | `GET /packs/search · versions`, `POST /packs/install`, `GET /jobs/:id` | ✓ | modpack search, install and progress |
