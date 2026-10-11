@@ -4,6 +4,7 @@ import { dirname } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import yauzl from 'yauzl';
 import { safeJoin } from './download.ts';
+import { LocalError, tx } from './i18n.ts';
 
 const S_IFMT = 0o170000;
 const S_IFLNK = 0o120000;
@@ -15,7 +16,7 @@ const S_IFLNK = 0o120000;
 export function extractZip(file: string, dir: string) {
   return new Promise<void>((resolveAll, reject) => {
     yauzl.open(file, { lazyEntries: true }, (openErr, zip) => {
-      if (openErr || !zip) return reject(openErr ?? new Error(`Nem nyitható meg: ${file}`));
+      if (openErr || !zip) return reject(openErr ?? new LocalError(tx(`Cannot open: ${file}`, `Nem nyitható meg: ${file}`)));
       zip.on('error', reject);
       zip.on('end', () => resolveAll());
       zip.on('entry', (entry: yauzl.Entry) => {

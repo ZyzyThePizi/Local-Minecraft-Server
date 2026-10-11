@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { extract as extractTar } from 'tar';
 import { paths } from './config.ts';
 import { download, formatBytes } from './download.ts';
+import { LocalError, tx, type Text } from './i18n.ts';
 import { extractZip } from './unzip.ts';
 
 /** Adoptium ships LTS builds; map Mojang's required major to the nearest one that runs it. */
@@ -31,7 +32,7 @@ async function findJava(dir: string, depth = 0): Promise<string | null> {
 }
 
 /** Returns the path of a Java executable for `major`, downloading a Temurin JRE on first use. */
-export function ensureJava(major: number, log: (line: string) => void = () => {}): Promise<string> {
+export function ensureJava(major: number, log: (line: Text | string) => void = () => {}): Promise<string> {
   const key = String(major);
   let p = inflight.get(key);
   if (!p) {
@@ -41,7 +42,7 @@ export function ensureJava(major: number, log: (line: string) => void = () => {}
   return p;
 }
 
-async function installJava(major: number, log: (line: string) => void) {
+async function installJava(major: number, log: (line: Text | string) => void) {
   const dir = join(paths.java, String(major));
   const existing = await findJava(dir);
   if (existing) return existing;
@@ -51,7 +52,7 @@ async function installJava(major: number, log: (line: string) => void) {
   const url = `https://api.adoptium.net/v3/binary/latest/${major}/ga/${os}/${arch}/jre/hotspot/normal/eclipse`;
   const archive = join(paths.java, `${major}.${os === 'windows' ? 'zip' : 'tar.gz'}`);
 
-  log(`Java ${major} letöltése (Eclipse Temurin)…`);
+  log(tx(`Downloading Java ${major} (Eclipse Temurin)…`, `Java ${major} letöltése (Eclipse Temurin)…`));
   let lastLogged = 0;
   await download(url, archive, {
     onProgress(received, total) {
@@ -69,7 +70,7 @@ async function installJava(major: number, log: (line: string) => void) {
   await rm(archive, { force: true });
 
   const java = await findJava(dir);
-  if (!java) throw new Error(`A Java ${major} kicsomagolása után nem található a java futtatható fájl.`);
-  log(`Java ${major} kész.`);
+  if (!java) throw new LocalError(tx(`Java ${major} was unpacked, but the java executable is missing.`, `A Java ${major} kicsomagolása után nem található a java futtatható fájl.`));
+  log(tx(`Java ${major} is ready.`, `Java ${major} kész.`));
   return java;
 }

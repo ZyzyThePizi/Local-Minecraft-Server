@@ -1,4 +1,5 @@
 import { fetchJson } from './download.ts';
+import { LocalError, tx } from './i18n.ts';
 
 const MANIFEST_URL = 'https://piston-meta.mojang.com/mc/game/version_manifest_v2.json';
 const CACHE_MS = 60 * 60 * 1000;
@@ -27,7 +28,7 @@ export async function mojangVersions() {
 
 export async function versionInfo(id: string) {
   const entry = (await mojangVersions()).find((v) => v.id === id);
-  if (!entry) throw new Error(`Ismeretlen Minecraft verzió: ${id}`);
+  if (!entry) throw new LocalError(tx(`Unknown Minecraft version: ${id}`, `Ismeretlen Minecraft verzió: ${id}`));
   const json = await fetchJson<VersionJson>(entry.url);
   return {
     // Versions before 1.17 do not declare javaVersion and run on Java 8.

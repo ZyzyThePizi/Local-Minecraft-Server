@@ -6,6 +6,7 @@ import { app, runtime } from './app.ts';
 import { audit } from './audit.ts';
 import { config, envFile, MIN_PASSWORD_LENGTH, paths, reloadEnv, VERSION, writeEnvValue } from './config.ts';
 import { exposeViaFunnel } from './funnel.ts';
+import { errorText, tx } from './i18n.ts';
 import { initNode, nodeId, shortId } from './node.ts';
 import { findFreePort, isPortFree } from './ports.ts';
 import { REGISTRY_URL, startRegistry } from './registry.ts';
@@ -89,7 +90,7 @@ const httpServer = serve({ fetch: fetchWithPrefix, port, hostname: '127.0.0.1' }
     const funnel = await exposeViaFunnel(port);
     runtime.publicUrl = funnel.url;
     runtime.funnelNote = funnel.note ?? null;
-    if (funnel.note) console.log(`  [FIGYELEM] ${funnel.note}`);
+    if (funnel.note) console.log(`  [FIGYELEM] ${funnel.note.hu}`);
   }
   const publicUrl = settings().publicUrl || runtime.publicUrl;
   if (publicUrl) {
@@ -118,7 +119,7 @@ watchFile(envFile, { interval: 2000 }, () => {
   const changed = reloadEnv();
   if (changed.length) {
     console.log(`  .env frissítve: ${changed.join(', ')}`);
-    audit(null, '.env frissítve', changed.join(', '));
+    audit(null, tx('.env updated', '.env frissítve'), changed.join(', '));
   }
 });
 
@@ -133,7 +134,7 @@ async function autoStart() {
     try {
       await servers.get(inst.id).start(inst);
     } catch (err) {
-      console.log(`  Nem indult el (${inst.name}): ${(err as Error).message}`);
+      console.log(`  Nem indult el (${inst.name}): ${errorText(err).hu}`);
     }
   }
   startRegistry();

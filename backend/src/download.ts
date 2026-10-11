@@ -6,6 +6,7 @@ import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { USER_AGENT } from './config.ts';
+import { LocalError, tx, type Text } from './i18n.ts';
 import type { JobContext } from './jobs.ts';
 
 export async function fetchJson<T>(url: string, init: RequestInit = {}): Promise<T> {
@@ -51,7 +52,7 @@ async function downloadOnce(url: string, dest: string, opts: DownloadOptions) {
     redirect: 'follow',
     signal: AbortSignal.timeout(10 * 60_000),
   });
-  if (!res.ok || !res.body) throw new Error(`Letöltés sikertelen (${res.status}): ${url}`);
+  if (!res.ok || !res.body) throw new LocalError(tx(`Download failed (${res.status}): ${url}`, `Letöltés sikertelen (${res.status}): ${url}`));
 
   const total = Number(res.headers.get('content-length') ?? 0);
   const hash = opts.sha1 ? createHash('sha1') : null;
@@ -69,7 +70,7 @@ async function downloadOnce(url: string, dest: string, opts: DownloadOptions) {
   try {
     await pipeline(Readable.fromWeb(res.body as unknown as NodeReadableStream), meter, createWriteStream(part));
     if (hash && opts.sha1 && hash.digest('hex') !== opts.sha1.toLowerCase()) {
-      throw new Error(`Hibás ellenőrzőösszeg: ${url}`);
+      throw new LocalError(tx(`Checksum mismatch: ${url}`, `Hibás ellenőrzőösszeg: ${url}`));
     }
     await rename(part, dest);
   } catch (err) {
@@ -90,7 +91,7 @@ export interface DownloadItem {
  * Downloads many files in parallel, falling back to the next URL when a source fails,
  * and keeps the job's stage text updated with "done/total · MB/s".
  */
-export async function downloadAll(ctx: JobContext, items: DownloadItem[], label: string, concurrency = 8) {
+export async function downloadAll(ctx: JobContext, items: DownloadItem[], label: Text, concurrency = 8) {
   const started = Date.now();
   let done = 0;
   let bytes = 0;
@@ -100,7 +101,8 @@ export async function downloadAll(ctx: JobContext, items: DownloadItem[], label:
     if (!force && now - lastUpdate < 500) return;
     lastUpdate = now;
     const secs = Math.max(0.5, (now - started) / 1000);
-    ctx.detail(`${label} (${done}/${items.length} · ${(bytes / 1048576 / secs).toFixed(1)} MB/s)`);
+    const counter = `(${done}/${items.length} · ${(bytes / 1048576 / secs).toFixed(1)} MB/s)`;
+    ctx.detail(tx(`${label.en} ${counter}`, `${label.hu} ${counter}`));
     ctx.progress(done / Math.max(1, items.length));
   };
   report(true);
@@ -131,7 +133,8 @@ export async function downloadAll(ctx: JobContext, items: DownloadItem[], label:
     report();
   });
   report(true);
-  ctx.log(`  ${items.length} fájl, ${formatBytes(bytes)}, ${Math.round((Date.now() - started) / 1000)} mp alatt`);
+  const secs = Math.round((Date.now() - started) / 1000);
+  ctx.log(tx(`  ${items.length} files, ${formatBytes(bytes)}, in ${secs} s`, `  ${items.length} fájl, ${formatBytes(bytes)}, ${secs} mp alatt`));
 }
 
 /** Runs `fn` over `items` with at most `limit` in flight. */
@@ -152,7 +155,7 @@ export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, in
 export function safeJoin(root: string, rel: string) {
   const full = resolve(root, rel);
   const r = relative(root, full);
-  if (!r || r.startsWith('..') || isAbsolute(r)) throw new Error(`Érvénytelen fájlútvonal a csomagban: ${rel}`);
+  if (!r || r.startsWith('..') || isAbsolute(r)) throw new LocalError(tx(`Invalid file path in the pack: ${rel}`, `Érvénytelen fájlútvonal a csomagban: ${rel}`));
   return full;
 }
 

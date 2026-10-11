@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { readdir, rm } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { download, fetchJson } from './download.ts';
+import { LocalError, tx } from './i18n.ts';
 import type { JobContext } from './jobs.ts';
 import { versionInfo } from './mojang.ts';
 import type { Launch, Loader } from './store.ts';
@@ -21,7 +22,7 @@ export function runProcess(cmd: string, args: string[], cwd: string, ctx: JobCon
     child.stdout.on('data', onData);
     child.stderr.on('data', onData);
     child.on('error', reject);
-    child.on('exit', (code) => (code === 0 ? resolveRun() : reject(new Error(`${cmd} kilépési kód: ${code}`))));
+    child.on('exit', (code) => (code === 0 ? resolveRun() : reject(new LocalError(tx(`${cmd} exited with code ${code}`, `${cmd} kilépési kód: ${code}`)))));
   });
 }
 
@@ -43,7 +44,7 @@ export async function latestFabricLoader(mc: string) {
     `https://meta.fabricmc.net/v2/versions/loader/${encodeURIComponent(mc)}`,
   );
   const pick = list.find((l) => l.loader.stable) ?? list[0];
-  if (!pick) throw new Error(`A Fabric nem támogatja ezt a verziót: ${mc}`);
+  if (!pick) throw new LocalError(tx(`Fabric does not support this version: ${mc}`, `A Fabric nem támogatja ezt a verziót: ${mc}`));
   return pick.loader.version;
 }
 
@@ -61,16 +62,16 @@ export async function installLoader(
 ): Promise<Launch> {
   switch (loader) {
     case 'vanilla': {
-      ctx.stage(`Minecraft ${mc} szerver letöltése`);
+      ctx.stage(tx(`Downloading the Minecraft ${mc} server`, `Minecraft ${mc} szerver letöltése`));
       const { server } = await versionInfo(mc);
-      if (!server) throw new Error(`Ehhez a verzióhoz nincs hivatalos szerver: ${mc}`);
+      if (!server) throw new LocalError(tx(`There is no official server for this version: ${mc}`, `Ehhez a verzióhoz nincs hivatalos szerver: ${mc}`));
       await download(server.url, join(dir, 'server.jar'), { sha1: server.sha1 });
       return { kind: 'jar', jar: 'server.jar' };
     }
 
     case 'fabric': {
       const version = loaderVersion ?? (await latestFabricLoader(mc));
-      ctx.stage(`Fabric ${version} telepítése`);
+      ctx.stage(tx(`Installing Fabric ${version}`, `Fabric ${version} telepítése`));
       const installers = await fetchJson<{ version: string; stable: boolean }[]>(
         'https://meta.fabricmc.net/v2/versions/installer',
       );
@@ -90,7 +91,7 @@ export async function installLoader(
       const installer = meta[0]!.version;
       const version =
         loaderVersion ?? (await fetchJson<{ version: string }[]>('https://meta.quiltmc.org/v3/versions/loader'))[0]!.version;
-      ctx.stage(`Quilt ${version} telepítése`);
+      ctx.stage(tx(`Installing Quilt ${version}`, `Quilt ${version} telepítése`));
       const jar = join(dir, 'quilt-installer.jar');
       await download(
         `https://maven.quiltmc.org/repository/release/org/quiltmc/quilt-installer/${installer}/quilt-installer-${installer}.jar`,
@@ -103,8 +104,9 @@ export async function installLoader(
 
     case 'forge':
     case 'neoforge': {
-      if (!loaderVersion) throw new Error(`Hiányzik a ${loader} verziója.`);
-      ctx.stage(`${loader === 'forge' ? 'Forge' : 'NeoForge'} ${loaderVersion} telepítése (ez eltarthat pár percig)`);
+      if (!loaderVersion) throw new LocalError(tx(`The ${loader} version is missing.`, `Hiányzik a ${loader} verziója.`));
+      const label = `${loader === 'forge' ? 'Forge' : 'NeoForge'} ${loaderVersion}`;
+      ctx.stage(tx(`Installing ${label} (this can take a few minutes)`, `${label} telepítése (ez eltarthat pár percig)`));
       const jar = join(dir, `${loader}-installer.jar`);
       await tryDownload(installerUrls(loader, mc, loaderVersion), jar);
       await runProcess(java, ['-jar', jar, '--installServer'], dir, ctx);
@@ -149,5 +151,5 @@ async function detectForgeLaunch(dir: string, version: string): Promise<Launch> 
   const jars = (await readdir(dir)).filter((f) => /^(neo)?forge-.*\.jar$/.test(f) && !f.includes('installer'));
   const jar = jars.find((f) => f.includes('universal')) ?? jars[0];
   if (jar) return { kind: 'jar', jar };
-  throw new Error('A Forge telepítő lefutott, de nem található indítható szerver.');
+  throw new LocalError(tx('The Forge installer finished, but there is no server to launch.', 'A Forge telepítő lefutott, de nem található indítható szerver.'));
 }

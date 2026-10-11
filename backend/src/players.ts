@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs';
 import { readdir, rm } from 'node:fs/promises';
-import { join, relative } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { HttpError } from './config.ts';
+import { tx } from './i18n.ts';
 import { readProperties } from './properties.ts';
 import { readJson, serverDir } from './store.ts';
 
@@ -16,10 +17,16 @@ export interface KnownPlayer {
 
 export const isUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 
-async function worldDir(instanceId: string) {
-  const level = (await readProperties(join(serverDir(instanceId), 'server.properties')))['level-name'] || 'world';
-  if (/[\\/]|\.\./.test(level)) throw new HttpError(400, 'BAD_LEVEL', 'Érvénytelen level-name a server.properties-ben.');
-  return join(serverDir(instanceId), level);
+/** The world folder named in server.properties. It must be a folder directly inside the server folder. */
+export async function worldDir(instanceId: string) {
+  const root = serverDir(instanceId);
+  const level = (await readProperties(join(root, 'server.properties')))['level-name'] || 'world';
+  const dir = resolve(root, level);
+  const rel = relative(root, dir);
+  if (!rel || rel.startsWith('..') || isAbsolute(rel) || /[\\/]/.test(rel)) {
+    throw new HttpError(400, 'BAD_LEVEL', tx('Invalid level-name in server.properties.', 'Érvénytelen level-name a server.properties-ben.'));
+  }
+  return dir;
 }
 
 /**

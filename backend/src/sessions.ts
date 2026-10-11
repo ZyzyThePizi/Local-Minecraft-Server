@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { Actor } from './audit.ts';
 import { config, HttpError, paths } from './config.ts';
+import { tx, type Text } from './i18n.ts';
 import { nodeId } from './node.ts';
 import { readJson, writeJson } from './store.ts';
 
@@ -116,7 +117,7 @@ async function open(via: Via, device: string, ip: string) {
     id: id(),
     refreshHash: '',
     via,
-    device: device.trim().slice(0, 60) || 'Ismeretlen eszköz',
+    device: device.trim().slice(0, 60) || 'Unknown device',
     createdAt: now,
     lastUsedAt: now,
     lastIp: ip,
@@ -127,7 +128,7 @@ async function open(via: Via, device: string, ip: string) {
 }
 
 export async function loginWithPassword(password: string, device: string, ip: string) {
-  if (!checkPassword(password)) throw new HttpError(401, 'BAD_PASSWORD', 'Hibás jelszó.');
+  if (!checkPassword(password)) throw new HttpError(401, 'BAD_PASSWORD', tx('Wrong password.', 'Hibás jelszó.'));
   return open({ kind: 'password' }, device, ip);
 }
 
@@ -141,11 +142,15 @@ export function inviteState(inv: Invite) {
 export async function redeemInvite(raw: string, device: string, ip: string) {
   const [, inviteId] = raw.split('.');
   const inv = invites.find((i) => i.id === inviteId);
-  if (!inv || !sameHash(hashToken(raw), inv.hash)) throw new HttpError(401, 'BAD_INVITE', 'Ismeretlen meghívó.');
+  if (!inv || !sameHash(hashToken(raw), inv.hash)) throw new HttpError(401, 'BAD_INVITE', tx('Unknown invite.', 'Ismeretlen meghívó.'));
   const state = inviteState(inv);
   if (state !== 'active') {
-    const why = { revoked: 'visszavonták', expired: 'lejárt', used: 'már felhasználták' }[state];
-    throw new HttpError(401, 'BAD_INVITE', `Ezt a meghívót ${why}.`);
+    const why = {
+      revoked: tx('This invite was revoked.', 'Ezt a meghívót visszavonták.'),
+      expired: tx('This invite has expired.', 'Ez a meghívó lejárt.'),
+      used: tx('This invite was already used.', 'Ezt a meghívót már felhasználták.'),
+    }[state];
+    throw new HttpError(401, 'BAD_INVITE', why);
   }
   inv.uses++;
   await saveInvites();
@@ -155,14 +160,18 @@ export async function redeemInvite(raw: string, device: string, ip: string) {
 export async function refresh(raw: string, ip: string) {
   const [, sid] = raw.split('.');
   const session = sessions.find((s) => s.id === sid);
-  const fail = () => new HttpError(401, 'SESSION_ENDED', 'A belépés lejárt, lépj be újra.');
+  const fail = () => new HttpError(401, 'SESSION_ENDED', tx('Your sign-in has expired, sign in again.', 'A belépés lejárt, lépj be újra.'));
   if (!session || session.expiresAt <= Date.now()) throw fail();
   const hash = hashToken(raw);
   if (sameHash(hash, session.refreshHash)) return rotate(session, ip);
   if (sameHash(hash, session.prevHash)) {
     // An old token came back after it was replaced: two parties hold this session. End it.
     await revokeSession(session.id);
-    throw new HttpError(401, 'SESSION_REUSED', 'Ezt a belépést egy másik helyről is használták, ezért lezártam. Lépj be újra.');
+    throw new HttpError(
+      401,
+      'SESSION_REUSED',
+      tx('This sign-in was also used from somewhere else, so it was ended. Sign in again.', 'Ezt a belépést egy másik helyről is használták, ezért lezártam. Lépj be újra.'),
+    );
   }
   throw fail();
 }
@@ -184,11 +193,11 @@ export function verifyAccess(raw: string | undefined): Session | null {
   }
 }
 
-export const viaLabel = (via: Via) => (via.kind === 'password' ? 'jelszó' : `meghívó: ${via.label}`);
+export const viaLabel = (via: Via): Text => (via.kind === 'password' ? tx('password', 'jelszó') : tx(`invite: ${via.label}`, `meghívó: ${via.label}`));
 
 export const actorOf = (s: Session | null, ip: string): Actor => ({
   sessionId: s?.id ?? null,
-  via: s ? viaLabel(s.via) : 'névtelen',
+  via: s ? viaLabel(s.via) : tx('anonymous', 'névtelen'),
   device: s?.device ?? '',
   ip,
 });
@@ -225,7 +234,7 @@ export async function createInvite(opts: { label: string; expiresInHours: number
   const inv: Invite = {
     id: inviteId,
     hash: hashToken(raw),
-    label: opts.label.trim().slice(0, 60) || 'Meghívó',
+    label: opts.label.trim().slice(0, 60) || 'Invite',
     createdAt: Date.now(),
     expiresAt: Date.now() + opts.expiresInHours * 3600_000,
     maxUses: opts.maxUses,

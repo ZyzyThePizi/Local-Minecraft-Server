@@ -3,6 +3,7 @@ import { mkdir, readdir, rename } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import yauzl from 'yauzl';
 import { download, mapLimit, type DownloadItem } from './download.ts';
+import { LocalError, tx } from './i18n.ts';
 import type { JobContext } from './jobs.ts';
 
 /**
@@ -26,7 +27,7 @@ function readEntries(file: string, names: string[]) {
   return new Promise<Map<string, string>>((resolveAll, reject) => {
     const out = new Map<string, string>();
     yauzl.open(file, { lazyEntries: true }, (openErr, zip) => {
-      if (openErr || !zip) return reject(openErr ?? new Error(`Nem nyitható meg: ${file}`));
+      if (openErr || !zip) return reject(openErr ?? new LocalError(tx(`Cannot open: ${file}`, `Nem nyitható meg: ${file}`)));
       zip.on('error', reject);
       zip.on('end', () => resolveAll(out));
       zip.on('entry', (entry: yauzl.Entry) => {
@@ -136,7 +137,7 @@ export async function restoreRequiredMods(
   skipped: (DownloadItem & { name: string })[],
 ) {
   if (!skipped.length || !existsSync(modsDir)) return [];
-  ctx.stage('Függőségek ellenőrzése');
+  ctx.stage(tx('Checking dependencies', 'Függőségek ellenőrzése'));
   await mkdir(holdDir, { recursive: true });
   const held: { name: string; path: string; meta: ModMeta }[] = [];
   await mapLimit(skipped, 8, async (item) => {
@@ -176,6 +177,9 @@ export async function restoreRequiredMods(
       changed = true;
     }
   }
-  if (restored.length) ctx.log(`Mégis telepítve, mert egy szerver oldali mod igényli (${restored.length}): ${restored.join(', ')}`);
+  if (restored.length) {
+    const list = `(${restored.length}): ${restored.join(', ')}`;
+    ctx.log(tx(`Installed after all, because a server-side mod needs them ${list}`, `Mégis telepítve, mert egy szerver oldali mod igényli ${list}`));
+  }
   return restored;
 }

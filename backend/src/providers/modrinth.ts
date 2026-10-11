@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { restoreRequiredMods } from '../moddeps.ts';
 import { extractZip } from '../unzip.ts';
 import { download, downloadAll, fetchJson, safeJoin } from '../download.ts';
+import { LocalError, tx } from '../i18n.ts';
 import type { JobContext } from '../jobs.ts';
 import type { Loader } from '../store.ts';
 import { copyOverrides, sortMcVersions, type InstalledPack, type PackSummary, type PackVersion } from './common.ts';
@@ -86,14 +87,14 @@ function loaderFrom(deps: Record<string, string>): { loader: Loader; loaderVersi
 }
 
 export async function install(ctx: JobContext, projectId: string, versionId: string, dir: string, tmp: string): Promise<InstalledPack> {
-  ctx.stage('Modpack adatainak lekérése');
+  ctx.stage(tx('Fetching the modpack details', 'Modpack adatainak lekérése'));
   const version = await fetchJson<MrVersion>(`${API}/version/${encodeURIComponent(versionId)}`);
-  if (version.project_id !== projectId) throw new Error('A verzió nem ehhez a modpackhez tartozik.');
+  if (version.project_id !== projectId) throw new LocalError(tx('This version does not belong to this modpack.', 'A verzió nem ehhez a modpackhez tartozik.'));
   const project = await fetchJson<{ title: string; slug: string; icon_url?: string | null }>(`${API}/project/${encodeURIComponent(projectId)}`);
   const file = version.files.find((f) => f.primary) ?? version.files[0];
-  if (!file) throw new Error('Ehhez a verzióhoz nincs letölthető fájl.');
+  if (!file) throw new LocalError(tx('This version has no downloadable file.', 'Ehhez a verzióhoz nincs letölthető fájl.'));
 
-  ctx.stage(`${file.filename} letöltése`, 0);
+  ctx.stage(tx(`Downloading ${file.filename}`, `${file.filename} letöltése`), 0);
   const zip = join(tmp, 'pack.mrpack');
   await download(file.url, zip, { sha1: file.hashes.sha1, onProgress: (r, t) => t && ctx.progress(r / t) });
   const packDir = join(tmp, 'pack');
@@ -101,7 +102,7 @@ export async function install(ctx: JobContext, projectId: string, versionId: str
   const index = JSON.parse(await readFile(join(packDir, 'modrinth.index.json'), 'utf8')) as MrIndex;
   const { loader, loaderVersion } = loaderFrom(index.dependencies);
   const mcVersion = index.dependencies.minecraft;
-  if (!mcVersion) throw new Error('A modpack nem adja meg a Minecraft verziót.');
+  if (!mcVersion) throw new LocalError(tx('The modpack does not name its Minecraft version.', 'A modpack nem adja meg a Minecraft verziót.'));
   ctx.log(`Minecraft ${mcVersion}, ${loader} ${loaderVersion ?? ''}`);
 
   // Modrinth marks each file's environment; a client-only mod that a server mod still requires is put back below.
@@ -109,17 +110,20 @@ export async function install(ctx: JobContext, projectId: string, versionId: str
   const skipped = index.files
     .filter((f) => f.env?.server === 'unsupported' && f.path.startsWith('mods/'))
     .map((f) => ({ urls: f.downloads, dest: safeJoin(dir, f.path), sha1: f.hashes.sha1, name: f.path.slice(5) }));
-  if (skipped.length) ctx.log(`Kliens oldali modok (${skipped.length}): ${skipped.map((s) => s.name).join(', ')}`);
+  if (skipped.length) {
+    const list = `(${skipped.length}): ${skipped.map((s) => s.name).join(', ')}`;
+    ctx.log(tx(`Client-side mods ${list}`, `Kliens oldali modok ${list}`));
+  }
 
-  ctx.stage(`Modok letöltése (${files.length} db)`, 0);
+  ctx.stage(tx(`Downloading mods (${files.length})`, `Modok letöltése (${files.length} db)`), 0);
   await downloadAll(
     ctx,
     files.map((f) => ({ urls: f.downloads, dest: safeJoin(dir, f.path), sha1: f.hashes.sha1 })),
-    'Modok letöltése',
+    tx('Downloading mods', 'Modok letöltése'),
   );
   await restoreRequiredMods(ctx, join(dir, 'mods'), join(tmp, 'client-mods'), skipped);
 
-  ctx.stage('Konfigurációk másolása');
+  ctx.stage(tx('Copying the configs', 'Konfigurációk másolása'));
   await copyOverrides(join(packDir, 'overrides'), dir);
   await copyOverrides(join(packDir, 'server-overrides'), dir);
 

@@ -1,26 +1,27 @@
 import { randomBytes } from 'node:crypto';
+import { errorText, toText, tx, type Lang, type Text } from './i18n.ts';
 
 export interface Job {
   id: string;
   kind: string;
   title: string;
   state: 'running' | 'done' | 'error';
-  stage: string;
+  stage: Text;
   /** 0..1, or null when the current stage has no measurable progress. */
   progress: number | null;
-  log: string[];
-  error?: string;
+  log: Text[];
+  error?: Text;
   result?: unknown;
   startedAt: number;
   finishedAt?: number;
 }
 
 export interface JobContext {
-  stage(name: string, progress?: number | null): void;
+  stage(name: Text | string, progress?: number | null): void;
   /** Updates the stage text without adding a log line (live counters). */
-  detail(text: string): void;
+  detail(text: Text | string): void;
   progress(value: number | null): void;
-  log(line: string): void;
+  log(line: Text | string): void;
 }
 
 const MAX_LOG = 400;
@@ -32,7 +33,7 @@ export function createJob(kind: string, title: string, run: (ctx: JobContext) =>
     kind,
     title,
     state: 'running',
-    stage: 'Indítás…',
+    stage: tx('Starting…', 'Indítás…'),
     progress: null,
     log: [],
     startedAt: Date.now(),
@@ -41,18 +42,18 @@ export function createJob(kind: string, title: string, run: (ctx: JobContext) =>
 
   const ctx: JobContext = {
     stage(name, progress = null) {
-      job.stage = name;
+      job.stage = toText(name);
       job.progress = progress;
-      ctx.log(`▸ ${name}`);
+      ctx.log(tx(`▸ ${job.stage.en}`, `▸ ${job.stage.hu}`));
     },
     detail(text) {
-      job.stage = text;
+      job.stage = toText(text);
     },
     progress(value) {
       job.progress = value === null ? null : Math.max(0, Math.min(1, value));
     },
     log(line) {
-      job.log.push(line);
+      job.log.push(toText(line));
       if (job.log.length > MAX_LOG) job.log.splice(0, job.log.length - MAX_LOG);
     },
   };
@@ -60,14 +61,14 @@ export function createJob(kind: string, title: string, run: (ctx: JobContext) =>
   run(ctx)
     .then((result) => {
       job.state = 'done';
-      job.stage = 'Kész';
+      job.stage = tx('Done', 'Kész');
       job.progress = 1;
       job.result = result;
     })
     .catch((err: unknown) => {
       job.state = 'error';
-      job.error = err instanceof Error ? err.message : String(err);
-      ctx.log(`✖ ${job.error}`);
+      job.error = errorText(err);
+      ctx.log(tx(`✖ ${job.error.en}`, `✖ ${job.error.hu}`));
       console.error(`[job ${job.kind}]`, err);
     })
     .finally(() => {
@@ -76,6 +77,10 @@ export function createJob(kind: string, title: string, run: (ctx: JobContext) =>
 
   return job;
 }
+
+/** A job as the panel reads it, in one language. */
+export const jobView = (job: Job | null, lang: Lang) =>
+  job && { ...job, stage: job.stage[lang], log: job.log.map((l) => l[lang]), error: job.error?.[lang] };
 
 export const getJob = (id: string) => jobs.get(id) ?? null;
 

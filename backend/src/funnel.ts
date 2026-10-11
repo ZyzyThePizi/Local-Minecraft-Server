@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { tx, type Text } from './i18n.ts';
 import { nodeId } from './node.ts';
 import { settings, updateSettings } from './store.ts';
 
@@ -32,15 +33,15 @@ async function backendAt(target: string) {
  * The first backend on a machine gets the root; another one (from a second folder) gets its own
  * sub-path, so both can be reached through the same port.
  */
-export async function exposeViaFunnel(port: number): Promise<{ url: string | null; note?: string }> {
+export async function exposeViaFunnel(port: number): Promise<{ url: string | null; note?: Text }> {
   if (!settings().funnel.enabled) return { url: null };
   let dns: string;
   try {
     const status = await tailscaleJson<{ BackendState?: string; Self?: { DNSName?: string } }>(['status']);
-    if (status.BackendState !== 'Running' || !status.Self?.DNSName) return { url: null, note: 'A Tailscale nem fut, vagy nem vagy bejelentkezve.' };
+    if (status.BackendState !== 'Running' || !status.Self?.DNSName) return { url: null, note: tx('Tailscale is not running, or you are not signed in to it.', 'A Tailscale nem fut, vagy nem vagy bejelentkezve.') };
     dns = status.Self.DNSName.replace(/\.$/, '');
   } catch {
-    return { url: null, note: 'A Tailscale nincs telepítve (https://tailscale.com/download), vagy nem fut.' };
+    return { url: null, note: tx('Tailscale is not installed (https://tailscale.com/download), or it is not running.', 'A Tailscale nincs telepítve (https://tailscale.com/download), vagy nem fut.') };
   }
 
   const target = `http://127.0.0.1:${port}`;
@@ -70,7 +71,7 @@ export async function exposeViaFunnel(port: number): Promise<{ url: string | nul
       await run('tailscale', args, { windowsHide: true, timeout: 30_000 });
     } catch (err) {
       const msg = ((err as { stderr?: string }).stderr || (err as Error).message).trim().split('\n')[0];
-      return { url: null, note: `A Tailscale Funnel nem állt be: ${msg}` };
+      return { url: null, note: tx(`Tailscale Funnel could not be set up: ${msg}`, `A Tailscale Funnel nem állt be: ${msg}`) };
     }
   }
   if (settings().funnel.path !== path) await updateSettings({ funnel: { ...settings().funnel, path } });

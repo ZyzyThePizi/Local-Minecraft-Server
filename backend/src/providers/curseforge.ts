@@ -5,6 +5,7 @@ import { restoreRequiredMods } from '../moddeps.ts';
 import { extractZip } from '../unzip.ts';
 import { config, HttpError } from '../config.ts';
 import { download, downloadAll, fetchJson, formatBytes, safeJoin, type DownloadItem } from '../download.ts';
+import { errorText, LocalError, tx } from '../i18n.ts';
 import type { JobContext } from '../jobs.ts';
 import type { Loader } from '../store.ts';
 import { copyOverrides, findPackRoot, sortMcVersions, type InstalledPack, type PackSummary, type PackVersion } from './common.ts';
@@ -51,7 +52,11 @@ interface CfManifest {
 
 async function cf<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!config.curseforgeApiKey) {
-    throw new HttpError(400, 'CURSEFORGE_KEY_MISSING', 'Nincs CurseForge API kulcs a backend .env fájljában (CURSEFORGE_API_KEY).');
+    throw new HttpError(
+      400,
+      'CURSEFORGE_KEY_MISSING',
+      tx('There is no CurseForge API key in the backend .env file (CURSEFORGE_API_KEY).', 'Nincs CurseForge API kulcs a backend .env fájljában (CURSEFORGE_API_KEY).'),
+    );
   }
   try {
     const res = await fetchJson<{ data: T }>(API + path, {
@@ -61,7 +66,7 @@ async function cf<T>(path: string, init: RequestInit = {}): Promise<T> {
     return res.data;
   } catch (err) {
     if (err instanceof Error && /^40[13]\b/.test(err.message)) {
-      throw new HttpError(400, 'CURSEFORGE_KEY_INVALID', 'A CurseForge API kulcs érvénytelen.');
+      throw new HttpError(400, 'CURSEFORGE_KEY_INVALID', tx('The CurseForge API key is invalid.', 'A CurseForge API kulcs érvénytelen.'));
     }
     throw err;
   }
@@ -107,11 +112,11 @@ async function resolveDirect(query: string) {
     // cfwidget maps slugs to project IDs (the official slug lookup is the blocked search endpoint).
     const widget = await fetchJson<{ id?: number }>(`https://api.cfwidget.com/minecraft/modpacks/${slug.toLowerCase()}`).catch(() => null);
     id = widget?.id ?? null;
-    if (!id) throw new HttpError(404, 'NOT_FOUND', `Nem található ilyen CurseForge modpack: ${slug}`);
+    if (!id) throw new HttpError(404, 'NOT_FOUND', tx(`No such CurseForge modpack: ${slug}`, `Nem található ilyen CurseForge modpack: ${slug}`));
   }
   if (!id) return null;
   const mod = await cf<CfMod>(`/v1/mods/${id}`);
-  if (mod.classId !== CLASS.modpacks) throw new HttpError(400, 'NOT_MODPACK', `${mod.name} nem modpack, hanem egy mod vagy más tartalom.`);
+  if (mod.classId !== CLASS.modpacks) throw new HttpError(400, 'NOT_MODPACK', tx(`${mod.name} is not a modpack; it is a mod or other content.`, `${mod.name} nem modpack, hanem egy mod vagy más tartalom.`));
   return toSummary(mod);
 }
 
@@ -166,16 +171,16 @@ function parseLoader(id: string | undefined): { loader: Loader; loaderVersion?: 
   const name = id.slice(0, dash).toLowerCase();
   const version = id.slice(dash + 1);
   if (name === 'forge' || name === 'neoforge' || name === 'fabric' || name === 'quilt') return { loader: name, loaderVersion: version };
-  throw new Error(`Nem támogatott mod loader: ${id}`);
+  throw new LocalError(tx(`Unsupported mod loader: ${id}`, `Nem támogatott mod loader: ${id}`));
 }
 
 export async function install(ctx: JobContext, projectId: string, fileId: string, dir: string, tmp: string): Promise<InstalledPack> {
   const pid = Number(projectId);
-  ctx.stage('Modpack adatainak lekérése');
+  ctx.stage(tx('Fetching the modpack details', 'Modpack adatainak lekérése'));
   const [mod, file] = await Promise.all([cf<CfMod>(`/v1/mods/${pid}`), cf<CfFile>(`/v1/mods/${pid}/files/${Number(fileId)}`)]);
-  if (mod.classId !== CLASS.modpacks) throw new Error(`${mod.name} nem modpack.`);
+  if (mod.classId !== CLASS.modpacks) throw new LocalError(tx(`${mod.name} is not a modpack.`, `${mod.name} nem modpack.`));
 
-  ctx.stage(`${file.displayName} letöltése`, 0);
+  ctx.stage(tx(`Downloading ${file.displayName}`, `${file.displayName} letöltése`), 0);
   const packZip = join(tmp, 'pack.zip');
   await download(fileUrl(file), packZip, { sha1: sha1Of(file), onProgress: (r, t) => t && ctx.progress(r / t) });
   const packDir = join(tmp, 'pack');
@@ -191,7 +196,8 @@ export async function install(ctx: JobContext, projectId: string, fileId: string
     try {
       done = await installServerPack(ctx, pid, file.serverPackFileId, dir, tmp);
     } catch (err) {
-      ctx.log(`A szervercsomag nem használható (${err instanceof Error ? err.message : err}), a modlista alapján telepítek.`);
+      const why = errorText(err);
+      ctx.log(tx(`The server pack cannot be used (${why.en}); installing from the mod list instead.`, `A szervercsomag nem használható (${why.hu}), a modlista alapján telepítek.`));
     }
   }
   if (!done) await installFromManifest(ctx, manifest, packDir, dir, tmp, mod.slug);
@@ -209,14 +215,14 @@ export async function install(ctx: JobContext, projectId: string, fileId: string
 
 async function installServerPack(ctx: JobContext, pid: number, serverFileId: number, dir: string, tmp: string) {
   const sp = await cf<CfFile>(`/v1/mods/${pid}/files/${serverFileId}`);
-  ctx.stage(`Szervercsomag letöltése (${sp.fileName})`, 0);
+  ctx.stage(tx(`Downloading the server pack (${sp.fileName})`, `Szervercsomag letöltése (${sp.fileName})`), 0);
   const zip = join(tmp, 'server.zip');
   await download(fileUrl(sp), zip, { sha1: sha1Of(sp), onProgress: (r, t) => t && ctx.progress(r / t) });
-  ctx.stage('Szervercsomag kicsomagolása');
+  ctx.stage(tx('Unpacking the server pack', 'Szervercsomag kicsomagolása'));
   const spDir = join(tmp, 'server');
   await extractZip(zip, spDir);
   const root = await findPackRoot(spDir);
-  if (!root) throw new Error('nincs benne mods mappa');
+  if (!root) throw new LocalError(tx('it has no mods folder', 'nincs benne mods mappa'));
   await cp(root, dir, { recursive: true, force: true });
   return true;
 }
@@ -234,7 +240,7 @@ async function loadExcludeRules(ctx: JobContext, packSlug: string) {
       forceInclude: new Set([...(j.globalForceIncludes ?? []), ...(pack?.forceIncludes ?? [])]),
     };
   } catch {
-    ctx.log('A kliens-oldali modok kizárólistája nem érhető el, csak a CurseForge jelölései alapján szűrök.');
+    ctx.log(tx('The list of client-only mods is unreachable; filtering by the CurseForge tags only.', 'A kliens-oldali modok kizárólistája nem érhető el, csak a CurseForge jelölései alapján szűrök.'));
     return { exclude: new Set<string>(), forceInclude: new Set<string>() };
   }
 }
@@ -270,7 +276,7 @@ async function preferModrinthMirror(ctx: JobContext, plan: DownloadItem[]) {
       }
     }
   } catch {
-    ctx.log('A Modrinth tükör nem érhető el, minden fájl a CurseForge-ról jön.');
+    ctx.log(tx('The Modrinth mirror is unreachable; every file comes from CurseForge.', 'A Modrinth tükör nem érhető el, minden fájl a CurseForge-ról jön.'));
     return;
   }
   let bytes = 0;
@@ -280,11 +286,19 @@ async function preferModrinthMirror(ctx: JobContext, plan: DownloadItem[]) {
     p.urls.unshift(url);
     bytes += p.size ?? 0;
   }
-  if (mirrors.size) ctx.log(`Gyorsítás: ${mirrors.size} / ${plan.length} fájl (${formatBytes(bytes)}) a gyorsabb Modrinth CDN-ről jön, ugyanazzal a hash-sel.`);
+  if (mirrors.size) {
+    const share = `${mirrors.size} / ${plan.length}`;
+    ctx.log(
+      tx(
+        `Speed-up: ${share} files (${formatBytes(bytes)}) come from the faster Modrinth CDN, with the same hash.`,
+        `Gyorsítás: ${share} fájl (${formatBytes(bytes)}) a gyorsabb Modrinth CDN-ről jön, ugyanazzal a hash-sel.`,
+      ),
+    );
+  }
 }
 
 async function installFromManifest(ctx: JobContext, manifest: CfManifest, packDir: string, dir: string, tmp: string, packSlug: string) {
-  ctx.stage('Modlista feldolgozása');
+  ctx.stage(tx('Reading the mod list', 'Modlista feldolgozása'));
   const rules = await loadExcludeRules(ctx, packSlug);
   const required = manifest.files.filter((f) => f.required !== false);
   const files = await chunked(required.map((f) => f.fileID), 100, (fileIds) =>
@@ -294,7 +308,10 @@ async function installFromManifest(ctx: JobContext, manifest: CfManifest, packDi
     cf<CfMod[]>('/v1/mods', { method: 'POST', body: JSON.stringify({ modIds }) }),
   );
   const modById = new Map(mods.map((m) => [m.id, m]));
-  if (files.length < required.length) ctx.log(`Figyelem: ${required.length - files.length} fájl már nem érhető el a CurseForge-on.`);
+  if (files.length < required.length) {
+    const gone = required.length - files.length;
+    ctx.log(tx(`Warning: ${gone} files are no longer available on CurseForge.`, `Figyelem: ${gone} fájl már nem érhető el a CurseForge-on.`));
+  }
 
   const plan: DownloadItem[] = [];
   const skipped: (DownloadItem & { name: string })[] = [];
@@ -312,14 +329,17 @@ async function installFromManifest(ctx: JobContext, manifest: CfManifest, packDi
     }
     plan.push(item);
   }
-  if (skipped.length) ctx.log(`Kliens oldali modok (${skipped.length}): ${skipped.map((s) => s.name).join(', ')}`);
+  if (skipped.length) {
+    const list = `(${skipped.length}): ${skipped.map((s) => s.name).join(', ')}`;
+    ctx.log(tx(`Client-side mods ${list}`, `Kliens oldali modok ${list}`));
+  }
 
   await preferModrinthMirror(ctx, [...plan, ...skipped]);
-  ctx.stage(`Modok letöltése (${plan.length} db)`, 0);
-  await downloadAll(ctx, plan, 'Modok letöltése');
+  ctx.stage(tx(`Downloading mods (${plan.length})`, `Modok letöltése (${plan.length} db)`), 0);
+  await downloadAll(ctx, plan, tx('Downloading mods', 'Modok letöltése'));
   await restoreRequiredMods(ctx, join(dir, 'mods'), join(tmp, 'client-mods'), skipped);
 
-  ctx.stage('Konfigurációk másolása');
+  ctx.stage(tx('Copying the configs', 'Konfigurációk másolása'));
   await copyOverrides(join(packDir, manifest.overrides ?? 'overrides'), dir);
-  if (!existsSync(join(dir, 'mods'))) ctx.log('Figyelem: a modpack nem tartalmaz modokat.');
+  if (!existsSync(join(dir, 'mods'))) ctx.log(tx('Warning: the modpack contains no mods.', 'Figyelem: a modpack nem tartalmaz modokat.'));
 }

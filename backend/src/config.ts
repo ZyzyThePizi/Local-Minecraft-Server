@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseEnv } from 'node:util';
+import { LocalError, type Text } from './i18n.ts';
 
 export const backendDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 // LMS_ENV_FILE points the tests at a throwaway file.
@@ -88,17 +89,17 @@ export const paths = {
   lock: resolve(config.dataDir, '.lock'),
 };
 
-export const VERSION = '2.1.0';
+export const VERSION = '2.2.0';
 /** Bumped when the hub and the backend stop understanding each other. */
 export const API_VERSION = 1;
 
 export const USER_AGENT = `ZyzyThePizi/Local-Minecraft-Server/${VERSION} (+https://github.com/ZyzyThePizi/Local-Minecraft-Server)`;
 
 /** Error with an HTTP status and a stable code the UI can react to. */
-export class HttpError extends Error {
+export class HttpError extends LocalError {
   status: number;
   code: string;
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: Text | string) {
     super(message);
     this.status = status;
     this.code = code;

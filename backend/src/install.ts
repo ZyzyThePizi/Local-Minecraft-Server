@@ -3,6 +3,7 @@ import { mkdir, rm } from 'node:fs/promises';
 import { totalmem } from 'node:os';
 import { join } from 'node:path';
 import { HttpError, paths } from './config.ts';
+import { tx } from './i18n.ts';
 import { ensureJava, javaMajorFor } from './java.ts';
 import { createJob, runningJob } from './jobs.ts';
 import { installLoader } from './loaders.ts';
@@ -30,8 +31,8 @@ export function recommendedMemory(modded: boolean) {
 }
 
 export function startInstall(req: InstallRequest) {
-  if (runningJob('install')) throw new HttpError(409, 'INSTALL_RUNNING', 'Már fut egy telepítés.');
-  if (req.source !== 'vanilla' && !req.projectId) throw new HttpError(400, 'BAD_REQUEST', 'Hiányzik a modpack azonosítója.');
+  if (runningJob('install')) throw new HttpError(409, 'INSTALL_RUNNING', tx('An install is already running.', 'Már fut egy telepítés.'));
+  if (req.source !== 'vanilla' && !req.projectId) throw new HttpError(400, 'BAD_REQUEST', tx('The modpack id is missing.', 'Hiányzik a modpack azonosítója.'));
 
   const title = req.name ?? (req.source === 'vanilla' ? `Vanilla ${req.versionId}` : 'Modpack');
   return createJob('install', title, async (ctx) => {
@@ -46,12 +47,12 @@ export function startInstall(req: InstallRequest) {
       else if (req.source === 'modrinth') pack = await modrinth.install(ctx, req.projectId!, req.versionId, dir, tmp);
       else pack = { name: `Vanilla ${req.versionId}`, versionName: req.versionId, mcVersion: req.versionId, loader: 'vanilla' };
 
-      ctx.stage('Java ellenőrzése');
+      ctx.stage(tx('Checking Java', 'Java ellenőrzése'));
       const javaMajor = javaMajorFor((await versionInfo(pack.mcVersion)).javaMajor);
       const java = await ensureJava(javaMajor, (l) => ctx.log(l));
       const launch = await installLoader(ctx, dir, pack.mcVersion, pack.loader, pack.loaderVersion, java);
 
-      ctx.stage('Szerver előkészítése');
+      ctx.stage(tx('Preparing the server', 'Szerver előkészítése'));
       const propsFile = join(dir, 'server.properties');
       const props = await readProperties(propsFile);
       // Every server gets its own game port, so several can run side by side (each with its own tunnel).
@@ -62,7 +63,7 @@ export function startInstall(req: InstallRequest) {
       let port = Number(props['server-port']) || 25565;
       while (used.has(port)) port++;
       await writeProperties(propsFile, { 'server-port': String(port), ...(props.motd ? {} : { motd: pack.name.slice(0, 59) }) });
-      ctx.log(`Játékport: ${port}`);
+      ctx.log(tx(`Game port: ${port}`, `Játékport: ${port}`));
 
       const instance: Instance = {
         id,
@@ -82,7 +83,7 @@ export function startInstall(req: InstallRequest) {
         memoryMb: recommendedMemory(pack.loader !== 'vanilla'),
       };
       await saveInstance(instance);
-      ctx.log(`Kész: ${pack.name} (${pack.mcVersion}, ${pack.loader})`);
+      ctx.log(tx(`Done: ${pack.name} (${pack.mcVersion}, ${pack.loader})`, `Kész: ${pack.name} (${pack.mcVersion}, ${pack.loader})`));
       return { instanceId: id };
     } catch (err) {
       await rm(instanceDir(id), { recursive: true, force: true, maxRetries: 3 });
